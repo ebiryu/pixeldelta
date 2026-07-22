@@ -4,7 +4,8 @@
   "type": "module",
   "description": "Generates the compatibility fixtures and their expected diff counts",
   "scripts": {
-    "generate": "node generate.mjs"
+    "generate": "node generate.mjs",
+    "bench-fixtures": "node bench.mjs"
   },
   "devDependencies": {
     "pixelmatch": "^7.1.0",

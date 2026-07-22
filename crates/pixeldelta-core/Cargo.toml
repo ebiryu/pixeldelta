@@ -12,3 +12,10 @@ repository.workspace = true
 png = "0.18"
 # Generates the images the invariants in tests/properties.rs are checked on.
 proptest = "1.11.0"
+# Runs the benchmarks in benches/ and keeps the previous measurement to
+# compare against.
+criterion = "0.7"
+
+[[bench]]
+name = "compare"
+harness = false

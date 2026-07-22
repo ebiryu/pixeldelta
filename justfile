@@ -44,3 +44,8 @@ bench:
 [doc("Regenerate the compatibility fixtures and their pixelmatch counts.")]
 fixtures:
     cd tools/fixtures && pnpm install && node generate.mjs
+
+# Regenerate the benchmark fixtures. Every past measurement was taken against
+# the committed images, so running this discards the basis for comparison.
+bench-fixtures:
+    cd tools/fixtures && pnpm install && node bench.mjs
