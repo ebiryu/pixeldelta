@@ -292,6 +292,34 @@ fn an_ignored_region_reaching_outside_the_image_is_clipped() {
 }
 
 #[test]
+fn an_ignored_region_still_provides_neighbors_to_the_detector() {
+    // The blended column keeps its dark side, which lies inside the ignored
+    // region. Without those neighbors it would have only brighter ones and
+    // would no longer read as an edge.
+    let base = split(0);
+    let shifted = split(128);
+    let a = Image::from_rgba8(8, 8, &base).unwrap();
+    let b = Image::from_rgba8(8, 8, &shifted).unwrap();
+
+    let result = compare(
+        &a,
+        &b,
+        &CompareOptions {
+            ignore_regions: vec![Rect {
+                x: 0,
+                y: 0,
+                width: 3,
+                height: 8,
+            }],
+            ..CompareOptions::default()
+        },
+    );
+
+    assert_eq!(result.verdict, Verdict::Match);
+    assert_eq!(result.diff_pixels, 0);
+}
+
+#[test]
 fn a_full_comparison_is_not_marked_as_stopped() {
     let (base, changed) = quadrant_changed();
     let a = Image::from_rgba8(4, 4, &base).unwrap();
