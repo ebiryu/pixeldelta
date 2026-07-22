@@ -10,3 +10,5 @@ repository.workspace = true
 [dev-dependencies]
 # Decodes the compatibility fixtures. The library itself performs no I/O.
 png = "0.18"
+# Generates the images the invariants in tests/properties.rs are checked on.
+proptest = "1.11.0"
