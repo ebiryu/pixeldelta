@@ -68,6 +68,45 @@ fn the_threshold_decides_whether_a_small_delta_counts() {
 }
 
 #[test]
+fn a_threshold_outside_the_unit_range_is_clamped() {
+    let base = solid(2, 2, [0, 0, 0, 255]);
+    let mut changed = base.clone();
+    changed[0..4].copy_from_slice(&[255, 255, 255, 255]);
+    let a = Image::from_rgba8(2, 2, &base).unwrap();
+    let b = Image::from_rgba8(2, 2, &changed).unwrap();
+
+    // Above 1.0 nothing can exceed the threshold, below 0.0 anything can.
+    assert_eq!(
+        compare(&a, &b, &CompareOptions { threshold: 4.0 }).diff_pixels,
+        0
+    );
+    assert_eq!(
+        compare(&a, &b, &CompareOptions { threshold: -1.0 }).diff_pixels,
+        1
+    );
+}
+
+#[test]
+fn a_threshold_that_is_not_a_number_does_not_hide_differences() {
+    let base = solid(2, 2, [0, 0, 0, 255]);
+    let mut changed = base.clone();
+    changed[0..4].copy_from_slice(&[255, 255, 255, 255]);
+    let a = Image::from_rgba8(2, 2, &base).unwrap();
+    let b = Image::from_rgba8(2, 2, &changed).unwrap();
+
+    let result = compare(
+        &a,
+        &b,
+        &CompareOptions {
+            threshold: f32::NAN,
+        },
+    );
+
+    assert_eq!(result.verdict, Verdict::Differ);
+    assert_eq!(result.diff_pixels, 1);
+}
+
+#[test]
 fn comparison_is_commutative() {
     let base = solid(3, 3, [10, 200, 40, 255]);
     let mut other = base.clone();

@@ -19,6 +19,8 @@ pub struct CompareOptions {
     /// A pixel counts as different once its color delta exceeds
     /// `threshold * threshold * MAX_COLOR_DELTA`. Smaller values make the
     /// comparison more sensitive. The default of `0.1` matches pixelmatch.
+    /// Values outside `[0, 1]` are clamped, and a value that is not a number
+    /// is treated as `0`.
     pub threshold: f32,
 }
 
@@ -30,8 +32,16 @@ impl Default for CompareOptions {
 
 impl CompareOptions {
     /// Color delta above which a pixel counts as different.
+    ///
+    /// Thresholds outside `[0, 1]` are clamped. A threshold that is not a
+    /// number becomes `0`, so a misconfigured comparison reports every
+    /// difference rather than reporting a match and hiding all of them.
     fn max_delta(&self) -> f32 {
-        let t = self.threshold.clamp(0.0, 1.0);
+        let t = if self.threshold.is_nan() {
+            0.0
+        } else {
+            self.threshold.clamp(0.0, 1.0)
+        };
         MAX_COLOR_DELTA * t * t
     }
 }
