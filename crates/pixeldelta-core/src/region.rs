@@ -55,6 +55,16 @@ impl Mask {
     pub fn excludes(&self, x: u32, y: u32) -> bool {
         self.regions.iter().any(|region| region.contains(x, y))
     }
+
+    /// Whether any region covers part of row `y`.
+    ///
+    /// A row it does not reach has every pixel compared, which lets the scan
+    /// count the row in one step instead of asking about each pixel.
+    pub fn reaches_row(&self, y: u32) -> bool {
+        self.regions
+            .iter()
+            .any(|region| y >= region.y && y - region.y < region.height)
+    }
 }
 
 #[cfg(test)]
@@ -109,6 +119,24 @@ mod tests {
         );
         assert!(mask.excludes(9, 9));
         assert!(!mask.excludes(7, 9));
+    }
+
+    #[test]
+    fn a_row_is_reached_only_between_the_top_and_bottom_of_a_region() {
+        let mask = Mask::new(
+            &[Rect {
+                x: 1,
+                y: 2,
+                width: 3,
+                height: 4,
+            }],
+            10,
+            10,
+        );
+        assert!(!mask.reaches_row(1));
+        assert!(mask.reaches_row(2));
+        assert!(mask.reaches_row(5));
+        assert!(!mask.reaches_row(6));
     }
 
     #[test]

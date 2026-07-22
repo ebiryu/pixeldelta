@@ -21,6 +21,12 @@ use crate::region::Mask;
 /// scan finishes.
 const ROWS_PER_BLOCK: u32 = 64;
 
+/// Pixels a row is compared for equality at a time.
+///
+/// Eight pixels are 32 bytes, which the equality check reads as whole machine
+/// words rather than pixel by pixel.
+const PIXELS_PER_CHUNK: usize = 8;
+
 /// Pixel count below which the scan stays on the calling thread.
 ///
 /// Below it, distributing the work costs more than the work itself.
@@ -110,8 +116,6 @@ fn scan_rows(
     budget: Option<&Budget>,
     rows: Range<u32>,
 ) -> Counts {
-    let (left, right) = (a.pixels(), b.pixels());
-    let width = a.width();
     let mut counts = Counts::default();
 
     for y in rows {
@@ -121,33 +125,143 @@ fn scan_rows(
             return counts;
         }
 
-        let row = y as usize * width as usize;
-        for x in 0..width {
-            if params.mask.excludes(x, y) {
-                continue;
-            }
-            counts.compared += 1;
-
-            let index = row + x as usize;
-            if color_delta(&left[index], &right[index], index * BYTES_PER_PIXEL) <= params.max_delta
-            {
-                continue;
-            }
-            // Anti-aliasing is decided only for pixels that already differ. It
-            // reads eight neighbors per image, so running it on every pixel
-            // would cost more than the comparison itself.
-            if params.detect_antialiasing
-                && (is_antialiased(a, b, x, y) || is_antialiased(b, a, x, y))
-            {
-                continue;
-            }
-            counts.diff_pixels += 1;
-            if budget.is_some_and(Budget::record) {
-                counts.stopped_early = true;
-                return counts;
-            }
+        // A row an ignored region reaches has to answer for each of its pixels
+        // whether it is compared at all, which the chunked path cannot do.
+        let outcome = if params.mask.reaches_row(y) {
+            scan_row_pixel_by_pixel(a, b, params, budget, y, &mut counts)
+        } else {
+            let outcome = scan_row_in_chunks(a, b, params, budget, y, &mut counts);
+            // Every pixel of the row is compared, up to the one the scan
+            // stopped at.
+            counts.compared += match outcome {
+                Row::Finished => u64::from(a.width()),
+                Row::Stopped(x) => u64::from(x) + 1,
+            };
+            outcome
+        };
+        if let Row::Stopped(_) = outcome {
+            counts.stopped_early = true;
+            return counts;
         }
     }
 
     counts
+}
+
+/// Where a row scan ended.
+enum Row {
+    /// Every pixel of the row was examined.
+    Finished,
+    /// The limit was reached at this column.
+    Stopped(u32),
+}
+
+/// Counts the differing pixels of row `y`, [`PIXELS_PER_CHUNK`] at a time.
+///
+/// Every pixel of the row is compared, and counting them is left to the
+/// caller, which knows from the outcome how far the scan got.
+fn scan_row_in_chunks(
+    a: &Image<'_>,
+    b: &Image<'_>,
+    params: &Params,
+    budget: Option<&Budget>,
+    y: u32,
+    counts: &mut Counts,
+) -> Row {
+    let width = a.width() as usize;
+    let row = y as usize * width;
+    let (left, right) = (&a.pixels()[row..row + width], &b.pixels()[row..row + width]);
+    let (left_chunks, left_tail) = left.as_chunks::<PIXELS_PER_CHUNK>();
+    let (right_chunks, right_tail) = right.as_chunks::<PIXELS_PER_CHUNK>();
+
+    for (chunk, (first, second)) in left_chunks.iter().zip(right_chunks).enumerate() {
+        // Screenshots repeat far more than they change, so most chunks are
+        // byte for byte the same. Comparing all of their bytes at once leaves
+        // the metric for the chunks that are not.
+        if first == second {
+            continue;
+        }
+
+        for lane in 0..PIXELS_PER_CHUNK {
+            let index = row + chunk * PIXELS_PER_CHUNK + lane;
+            let column = (chunk * PIXELS_PER_CHUNK + lane) as u32;
+            if color_delta(&first[lane], &second[lane], index * BYTES_PER_PIXEL) > params.max_delta
+                && !take_difference(a, b, params, budget, column, y, counts)
+            {
+                return Row::Stopped(column);
+            }
+        }
+    }
+
+    let offset = width - left_tail.len();
+    for (lane, (first, second)) in left_tail.iter().zip(right_tail).enumerate() {
+        let index = row + offset + lane;
+        let column = (offset + lane) as u32;
+        if color_delta(first, second, index * BYTES_PER_PIXEL) > params.max_delta
+            && !take_difference(a, b, params, budget, column, y, counts)
+        {
+            return Row::Stopped(column);
+        }
+    }
+
+    Row::Finished
+}
+
+/// Counts the differing pixels of row `y`, asking the mask about each one.
+///
+/// Pixels an ignored region covers are neither compared nor counted, so this
+/// path counts the compared ones itself.
+fn scan_row_pixel_by_pixel(
+    a: &Image<'_>,
+    b: &Image<'_>,
+    params: &Params,
+    budget: Option<&Budget>,
+    y: u32,
+    counts: &mut Counts,
+) -> Row {
+    let width = a.width();
+    let row = y as usize * width as usize;
+    let (left, right) = (a.pixels(), b.pixels());
+
+    for x in 0..width {
+        if params.mask.excludes(x, y) {
+            continue;
+        }
+        counts.compared += 1;
+
+        let index = row + x as usize;
+        if color_delta(&left[index], &right[index], index * BYTES_PER_PIXEL) > params.max_delta
+            && !take_difference(a, b, params, budget, x, y, counts)
+        {
+            return Row::Stopped(x);
+        }
+    }
+
+    Row::Finished
+}
+
+/// Counts the pixel at (`x`, `y`) as a difference unless it only differs by
+/// anti-aliasing.
+///
+/// The caller has established that the pixel is compared at all: neither path
+/// reaches this for a pixel an ignored region covers.
+///
+/// Returns whether the scan can go on rather than having reached the limit.
+fn take_difference(
+    a: &Image<'_>,
+    b: &Image<'_>,
+    params: &Params,
+    budget: Option<&Budget>,
+    x: u32,
+    y: u32,
+    counts: &mut Counts,
+) -> bool {
+    // Anti-aliasing is decided only for pixels that already differ. It reads
+    // eight neighbors per image, so running it on every pixel would cost more
+    // than the comparison itself.
+    if params.detect_antialiasing && (is_antialiased(a, b, x, y) || is_antialiased(b, a, x, y)) {
+        return true;
+    }
+    counts.diff_pixels += 1;
+    !budget.is_some_and(Budget::record)
 }
