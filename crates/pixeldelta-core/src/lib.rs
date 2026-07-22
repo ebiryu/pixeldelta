@@ -8,13 +8,13 @@ mod antialias;
 mod color;
 mod image;
 mod region;
+mod scan;
 
-use antialias::is_antialiased;
-use color::color_delta;
 pub use color::MAX_COLOR_DELTA;
 pub use image::{Image, ImageError, BYTES_PER_PIXEL};
 use region::Mask;
 pub use region::Rect;
+use scan::{scan, Params};
 
 /// Options controlling a comparison.
 #[derive(Debug, Clone, PartialEq)]
@@ -108,7 +108,10 @@ pub struct CompareResult {
     /// Whether the comparison stopped at the [`FailFast`] limit.
     ///
     /// When it did, `diff_pixels` and `diff_ratio` are lower bounds rather
-    /// than counts of the whole image.
+    /// than counts of the whole image, and repeating the comparison on the
+    /// same images can report different bounds: how far each part of the image
+    /// got before the limit was reached depends on the threads running it. A
+    /// comparison that ran to the end reports the same counts every time.
     pub stopped_early: bool,
 }
 
@@ -126,59 +129,34 @@ pub fn compare(a: &Image<'_>, b: &Image<'_>, opts: &CompareOptions) -> CompareRe
         };
     }
 
-    let max_delta = opts.max_delta();
-    let mask = Mask::new(&opts.ignore_regions, a.width(), a.height());
-    let (left, right) = (a.pixels(), b.pixels());
-
-    // The scan runs until it has found more differing pixels than the limit
-    // tolerates, so a limit of zero stops at the first difference.
-    let limit = opts.fail_fast.map_or(u64::MAX, |fail_fast| {
-        fail_fast.max_diff_pixels.saturating_add(1)
-    });
-
-    let mut diff_pixels = 0u64;
-    let mut compared = 0u64;
-    let mut stopped_early = false;
-    'scan: for y in 0..a.height() {
-        let row = y as usize * a.width() as usize;
-        for x in 0..a.width() {
-            if mask.excludes(x, y) {
-                continue;
-            }
-            compared += 1;
-
-            let index = row + x as usize;
-            if color_delta(&left[index], &right[index], index * BYTES_PER_PIXEL) <= max_delta {
-                continue;
-            }
-            // Anti-aliasing is decided only for pixels that already differ. It
-            // reads eight neighbors per image, so running it on every pixel
-            // would cost more than the comparison itself.
-            if opts.detect_antialiasing
-                && (is_antialiased(a, b, x, y) || is_antialiased(b, a, x, y))
-            {
-                continue;
-            }
-            diff_pixels += 1;
-            if diff_pixels >= limit {
-                stopped_early = true;
-                break 'scan;
-            }
-        }
-    }
+    let counts = scan(
+        a,
+        b,
+        &Params {
+            max_delta: opts.max_delta(),
+            detect_antialiasing: opts.detect_antialiasing,
+            mask: Mask::new(&opts.ignore_regions, a.width(), a.height()),
+            // The scan runs until it has found more differing pixels than the
+            // limit tolerates, so a limit of zero stops at the first
+            // difference.
+            limit: opts
+                .fail_fast
+                .map(|fail_fast| fail_fast.max_diff_pixels.saturating_add(1)),
+        },
+    );
 
     CompareResult {
-        verdict: if diff_pixels == 0 {
+        verdict: if counts.diff_pixels == 0 {
             Verdict::Match
         } else {
             Verdict::Differ
         },
-        diff_pixels,
-        diff_ratio: if compared == 0 {
+        diff_pixels: counts.diff_pixels,
+        diff_ratio: if counts.compared == 0 {
             0.0
         } else {
-            diff_pixels as f64 / compared as f64
+            counts.diff_pixels as f64 / counts.compared as f64
         },
-        stopped_early,
+        stopped_early: counts.stopped_early,
     }
 }

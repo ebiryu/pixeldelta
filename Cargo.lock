@@ -392,6 +392,7 @@ dependencies = [
  "criterion",
  "png",
  "proptest",
+ "rayon",
 ]
 
 [[package]]

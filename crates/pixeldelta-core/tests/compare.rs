@@ -436,3 +436,102 @@ fn transparent_pixels_are_compared_over_the_same_background() {
     assert_eq!(result.verdict, Verdict::Match);
     assert_eq!(result.diff_pixels, 0);
 }
+
+/// Width and height of the images used for the cases below.
+///
+/// The scan splits an image of this many pixels into blocks handed to several
+/// threads, while the images in the other tests are small enough to stay on
+/// one. The counts here are what says the split changes nothing.
+const LARGE_SIDE: u32 = 1024;
+
+/// A `LARGE_SIDE` square, and a copy of it whose every `nth` pixel is white.
+fn large_pair(nth: usize) -> (Vec<u8>, Vec<u8>) {
+    let base = solid(LARGE_SIDE, LARGE_SIDE, [0, 0, 0, 255]);
+    let mut changed = base.clone();
+    for pixel in changed.chunks_exact_mut(4).step_by(nth) {
+        pixel.copy_from_slice(&[255, 255, 255, 255]);
+    }
+    (base, changed)
+}
+
+#[test]
+fn an_image_split_across_threads_counts_every_difference() {
+    let (base, changed) = large_pair(64);
+    let a = Image::from_rgba8(LARGE_SIDE, LARGE_SIDE, &base).unwrap();
+    let b = Image::from_rgba8(LARGE_SIDE, LARGE_SIDE, &changed).unwrap();
+    let pixels = (LARGE_SIDE * LARGE_SIDE) as u64;
+
+    let result = compare(&a, &b, &CompareOptions::default());
+
+    assert_eq!(result.verdict, Verdict::Differ);
+    assert_eq!(result.diff_pixels, pixels / 64);
+    assert_eq!(result.diff_ratio, (pixels / 64) as f64 / pixels as f64);
+}
+
+#[test]
+fn an_image_split_across_threads_matches_itself() {
+    let (base, _) = large_pair(64);
+    let a = Image::from_rgba8(LARGE_SIDE, LARGE_SIDE, &base).unwrap();
+
+    let result = compare(&a, &a, &CompareOptions::default());
+
+    assert_eq!(result.verdict, Verdict::Match);
+    assert_eq!(result.diff_pixels, 0);
+    assert_eq!(result.diff_ratio, 0.0);
+}
+
+#[test]
+fn an_ignored_region_holds_across_threads() {
+    let (base, changed) = large_pair(64);
+    let a = Image::from_rgba8(LARGE_SIDE, LARGE_SIDE, &base).unwrap();
+    let b = Image::from_rgba8(LARGE_SIDE, LARGE_SIDE, &changed).unwrap();
+    // The top half, which covers whole blocks as well as the boundary of one.
+    let ignored = Rect {
+        x: 0,
+        y: 0,
+        width: LARGE_SIDE,
+        height: LARGE_SIDE / 2,
+    };
+    let pixels = (LARGE_SIDE * LARGE_SIDE) as u64;
+
+    let result = compare(
+        &a,
+        &b,
+        &CompareOptions {
+            ignore_regions: vec![ignored],
+            ..CompareOptions::default()
+        },
+    );
+
+    assert_eq!(result.diff_pixels, pixels / 64 / 2);
+    assert_eq!(
+        result.diff_ratio,
+        (pixels / 64 / 2) as f64 / (pixels / 2) as f64
+    );
+}
+
+#[test]
+fn a_limited_scan_of_a_large_image_stops_past_the_limit() {
+    let (base, changed) = large_pair(64);
+    let a = Image::from_rgba8(LARGE_SIDE, LARGE_SIDE, &base).unwrap();
+    let b = Image::from_rgba8(LARGE_SIDE, LARGE_SIDE, &changed).unwrap();
+    let limit = 100;
+
+    let result = compare(
+        &a,
+        &b,
+        &CompareOptions {
+            fail_fast: Some(FailFast {
+                max_diff_pixels: limit,
+            }),
+            ..CompareOptions::default()
+        },
+    );
+
+    // Blocks running at once can pass the limit together, so the count is a
+    // lower bound rather than the limit plus one.
+    assert!(result.stopped_early);
+    assert!(result.diff_pixels > limit, "{} pixels", result.diff_pixels);
+    assert!(result.diff_pixels < (LARGE_SIDE * LARGE_SIDE) as u64 / 64);
+    assert_eq!(result.verdict, Verdict::Differ);
+}

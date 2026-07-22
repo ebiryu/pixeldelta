@@ -7,6 +7,10 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[dependencies]
+# Distributes the row blocks of a scan over a work-stealing thread pool.
+rayon = "1.11"
+
 [dev-dependencies]
 # Decodes the compatibility fixtures. The library itself performs no I/O.
 png = "0.18"
