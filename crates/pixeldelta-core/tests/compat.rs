@@ -5,6 +5,11 @@
 //! changes what callers see for the thresholds they already configured, so it
 //! needs a decision recorded in `docs/design.md` before the numbers are
 //! regenerated.
+//!
+//! The counts hold even though pixelmatch computes in double precision and
+//! this crate in single: the pixel sitting closest to a threshold clears it by
+//! 5e-5 of the threshold, which leaves room for the rounding difference.
+//! Reordering the arithmetic keeps the same margin to spend.
 
 use std::fs::File;
 use std::io::BufReader;

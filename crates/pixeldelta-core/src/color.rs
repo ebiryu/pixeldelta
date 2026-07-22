@@ -18,29 +18,28 @@ const Y_WEIGHT: f32 = 0.5053;
 const I_WEIGHT: f32 = 0.299;
 const Q_WEIGHT: f32 = 0.1957;
 
-// Shades of the background the checkerboard alternates between, and the
-// strides at which each channel switches.
+// The two shades the background alternates between, and the byte strides at
+// which the green and blue channels switch between them. The strides are the
+// golden ratio and its square, which no image content lines up with.
 const BACKGROUND_DARK: f32 = 48.0;
 const BACKGROUND_RANGE: f32 = 159.0;
+const RED_STRIDE: f64 = 1.0;
 const GREEN_STRIDE: f64 = 1.618_033_988_749_895;
 const BLUE_STRIDE: f64 = 2.618_033_988_749_895;
 
 /// Background a semi-transparent pixel at byte `offset` is composited onto.
 ///
-/// A single background color would hide differences in content close to that
-/// color, so the background alternates between a dark and a light shade with a
-/// period per channel that no image content lines up with.
+/// A single background color hides differences in content close to that color,
+/// so each channel of the background alternates between a dark and a light
+/// shade along the buffer. The red channel switches every byte, so for the
+/// four-byte-aligned offsets of whole pixels it stays on the dark shade.
 fn checkerboard_background(offset: usize) -> [f32; 3] {
     let position = offset as f64;
     let shade = |stride: f64| {
         let cell = (position / stride) as u64;
         BACKGROUND_DARK + BACKGROUND_RANGE * (cell % 2) as f32
     };
-    [
-        BACKGROUND_DARK + BACKGROUND_RANGE * (offset % 2) as f32,
-        shade(GREEN_STRIDE),
-        shade(BLUE_STRIDE),
-    ]
+    [shade(RED_STRIDE), shade(GREEN_STRIDE), shade(BLUE_STRIDE)]
 }
 
 /// Perceptual distance between two RGBA pixels in the YIQ color space.
@@ -96,11 +95,24 @@ mod tests {
 
     #[test]
     fn no_pair_exceeds_the_maximum() {
-        for r in (0..=255).step_by(15) {
-            for g in (0..=255).step_by(15) {
-                for b in (0..=255).step_by(15) {
-                    let delta = color_delta(&[r, g, b, 255], &[255 - r, 255 - g, 255 - b, 255], 0);
-                    assert!(delta <= MAX_COLOR_DELTA, "delta {delta} for {r},{g},{b}");
+        // Blending moves each channel difference within the same range it has
+        // for opaque pixels, so the bound has to hold on both paths.
+        for alpha in [0u8, 1, 64, 128, 254, 255] {
+            for offset in [0usize, 4, 8, 12] {
+                for r in (0..=255).step_by(15) {
+                    for g in (0..=255).step_by(15) {
+                        for b in (0..=255).step_by(15) {
+                            let delta = color_delta(
+                                &[r, g, b, alpha],
+                                &[255 - r, 255 - g, 255 - b, 255],
+                                offset,
+                            );
+                            assert!(
+                                delta <= MAX_COLOR_DELTA,
+                                "delta {delta} for {r},{g},{b} at alpha {alpha}"
+                            );
+                        }
+                    }
                 }
             }
         }
