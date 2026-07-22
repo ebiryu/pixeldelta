@@ -8,3 +8,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+
+[dev-dependencies]
+# Decodes the compatibility fixtures. The library itself performs no I/O.
+png = "0.18"

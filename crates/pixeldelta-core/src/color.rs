@@ -18,33 +18,60 @@ const Y_WEIGHT: f32 = 0.5053;
 const I_WEIGHT: f32 = 0.299;
 const Q_WEIGHT: f32 = 0.1957;
 
-/// Composites a pixel onto an opaque white background.
+// Shades of the background the checkerboard alternates between, and the
+// strides at which each channel switches.
+const BACKGROUND_DARK: f32 = 48.0;
+const BACKGROUND_RANGE: f32 = 159.0;
+const GREEN_STRIDE: f64 = 1.618_033_988_749_895;
+const BLUE_STRIDE: f64 = 2.618_033_988_749_895;
+
+/// Background a semi-transparent pixel at byte `offset` is composited onto.
 ///
-/// Transparency has to be resolved against a fixed background, otherwise two
-/// fully transparent pixels of different color would register as different.
-fn blend_on_white(pixel: &[u8; 4]) -> [f32; 3] {
-    let alpha = f32::from(pixel[3]) / 255.0;
+/// A single background color would hide differences in content close to that
+/// color, so the background alternates between a dark and a light shade with a
+/// period per channel that no image content lines up with.
+fn checkerboard_background(offset: usize) -> [f32; 3] {
+    let position = offset as f64;
+    let shade = |stride: f64| {
+        let cell = (position / stride) as u64;
+        BACKGROUND_DARK + BACKGROUND_RANGE * (cell % 2) as f32
+    };
     [
-        255.0 + (f32::from(pixel[0]) - 255.0) * alpha,
-        255.0 + (f32::from(pixel[1]) - 255.0) * alpha,
-        255.0 + (f32::from(pixel[2]) - 255.0) * alpha,
+        BACKGROUND_DARK + BACKGROUND_RANGE * (offset % 2) as f32,
+        shade(GREEN_STRIDE),
+        shade(BLUE_STRIDE),
     ]
 }
 
 /// Perceptual distance between two RGBA pixels in the YIQ color space.
 ///
+/// `offset` is the byte offset of the pixel within its image, which selects the
+/// background semi-transparent pixels are composited onto. Pixels that are
+/// opaque in both images do not depend on it.
+///
 /// The result is non-negative and bounded by [`MAX_COLOR_DELTA`].
-pub fn color_delta(a: &[u8; 4], b: &[u8; 4]) -> f32 {
+pub fn color_delta(a: &[u8; 4], b: &[u8; 4], offset: usize) -> f32 {
     if a == b {
         return 0.0;
     }
 
-    let [r1, g1, b1] = blend_on_white(a);
-    let [r2, g2, b2] = blend_on_white(b);
+    let mut dr = f32::from(a[0]) - f32::from(b[0]);
+    let mut dg = f32::from(a[1]) - f32::from(b[1]);
+    let mut db = f32::from(a[2]) - f32::from(b[2]);
 
-    let y = (r1 - r2) * R_TO_Y + (g1 - g2) * G_TO_Y + (b1 - b2) * B_TO_Y;
-    let i = (r1 - r2) * R_TO_I + (g1 - g2) * G_TO_I + (b1 - b2) * B_TO_I;
-    let q = (r1 - r2) * R_TO_Q + (g1 - g2) * G_TO_Q + (b1 - b2) * B_TO_Q;
+    if a[3] < 255 || b[3] < 255 {
+        let alpha_a = f32::from(a[3]);
+        let alpha_b = f32::from(b[3]);
+        let da = alpha_a - alpha_b;
+        let [red_bg, green_bg, blue_bg] = checkerboard_background(offset);
+        dr = (f32::from(a[0]) * alpha_a - f32::from(b[0]) * alpha_b - red_bg * da) / 255.0;
+        dg = (f32::from(a[1]) * alpha_a - f32::from(b[1]) * alpha_b - green_bg * da) / 255.0;
+        db = (f32::from(a[2]) * alpha_a - f32::from(b[2]) * alpha_b - blue_bg * da) / 255.0;
+    }
+
+    let y = dr * R_TO_Y + dg * G_TO_Y + db * B_TO_Y;
+    let i = dr * R_TO_I + dg * G_TO_I + db * B_TO_I;
+    let q = dr * R_TO_Q + dg * G_TO_Q + db * B_TO_Q;
 
     Y_WEIGHT * y * y + I_WEIGHT * i * i + Q_WEIGHT * q * q
 }
@@ -55,12 +82,12 @@ mod tests {
 
     #[test]
     fn identical_pixels_have_no_delta() {
-        assert_eq!(color_delta(&[10, 20, 30, 255], &[10, 20, 30, 255]), 0.0);
+        assert_eq!(color_delta(&[10, 20, 30, 255], &[10, 20, 30, 255], 0), 0.0);
     }
 
     #[test]
     fn red_and_cyan_reach_the_maximum() {
-        let delta = color_delta(&[255, 0, 0, 255], &[0, 255, 255, 255]);
+        let delta = color_delta(&[255, 0, 0, 255], &[0, 255, 255, 255], 0);
         assert!(
             (delta - MAX_COLOR_DELTA).abs() < 1.0,
             "delta {delta} is not close to {MAX_COLOR_DELTA}"
@@ -72,7 +99,7 @@ mod tests {
         for r in (0..=255).step_by(15) {
             for g in (0..=255).step_by(15) {
                 for b in (0..=255).step_by(15) {
-                    let delta = color_delta(&[r, g, b, 255], &[255 - r, 255 - g, 255 - b, 255]);
+                    let delta = color_delta(&[r, g, b, 255], &[255 - r, 255 - g, 255 - b, 255], 0);
                     assert!(delta <= MAX_COLOR_DELTA, "delta {delta} for {r},{g},{b}");
                 }
             }
@@ -83,21 +110,46 @@ mod tests {
     fn delta_is_symmetric() {
         let a = [200, 30, 90, 255];
         let b = [12, 240, 33, 255];
-        assert_eq!(color_delta(&a, &b), color_delta(&b, &a));
+        assert_eq!(color_delta(&a, &b, 0), color_delta(&b, &a, 0));
     }
 
     #[test]
     fn fully_transparent_pixels_are_equal_whatever_their_color() {
-        assert_eq!(color_delta(&[255, 0, 0, 0], &[0, 0, 255, 0]), 0.0);
+        assert_eq!(color_delta(&[255, 0, 0, 0], &[0, 0, 255, 0], 0), 0.0);
+    }
+
+    #[test]
+    fn half_transparent_white_differs_from_opaque_white() {
+        // On a white background both pixels resolve to white and the
+        // difference disappears. The checkerboard background keeps it.
+        let delta = color_delta(&[255, 255, 255, 128], &[255, 255, 255, 255], 0);
+        assert!(delta > 0.0, "delta {delta} lost the alpha difference");
+    }
+
+    #[test]
+    fn the_background_alternates_between_two_shades() {
+        // Same pixel pair at two offsets that land on different background
+        // shades in the blue channel.
+        let pair = ([0u8, 0, 255, 128], [0u8, 0, 255, 255]);
+        let dark = color_delta(&pair.0, &pair.1, 0);
+        let light = color_delta(&pair.0, &pair.1, 12);
+        assert_ne!(dark, light);
+    }
+
+    #[test]
+    fn opaque_pixels_ignore_the_offset() {
+        let a = [12, 200, 40, 255];
+        let b = [200, 12, 40, 255];
+        assert_eq!(color_delta(&a, &b, 0), color_delta(&a, &b, 4096));
     }
 
     #[test]
     fn luminance_dominates_chroma() {
         let base = [128, 128, 128, 255];
         // Same luminance, different chroma.
-        let chroma = color_delta(&base, &[100, 140, 140, 255]);
+        let chroma = color_delta(&base, &[100, 140, 140, 255], 0);
         // Different luminance, comparable RGB distance.
-        let luma = color_delta(&base, &[100, 100, 100, 255]);
+        let luma = color_delta(&base, &[100, 100, 100, 255], 0);
         assert!(
             luma > chroma,
             "luminance delta {luma} should exceed chroma delta {chroma}"

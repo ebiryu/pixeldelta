@@ -77,8 +77,8 @@ pub fn compare(a: &Image<'_>, b: &Image<'_>, opts: &CompareOptions) -> CompareRe
     let (right, _) = b.as_bytes().as_chunks::<BYTES_PER_PIXEL>();
 
     let mut diff_pixels = 0u64;
-    for (pa, pb) in left.iter().zip(right) {
-        if color_delta(pa, pb) > max_delta {
+    for (index, (pa, pb)) in left.iter().zip(right).enumerate() {
+        if color_delta(pa, pb, index * BYTES_PER_PIXEL) > max_delta {
             diff_pixels += 1;
         }
     }

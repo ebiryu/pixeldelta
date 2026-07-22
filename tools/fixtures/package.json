@@ -1,0 +1,13 @@
+{
+  "name": "pixeldelta-fixtures",
+  "private": true,
+  "type": "module",
+  "description": "Generates the compatibility fixtures and their expected diff counts",
+  "scripts": {
+    "generate": "node generate.mjs"
+  },
+  "devDependencies": {
+    "pixelmatch": "^7.1.0",
+    "pngjs": "^7.0.0"
+  }
+}
