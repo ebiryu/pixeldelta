@@ -1,4 +1,4 @@
-use pixeldelta_core::{compare, CompareOptions, Image, Rect, Verdict};
+use pixeldelta_core::{compare, CompareOptions, FailFast, Image, Rect, Verdict};
 
 /// Builds a solid image of `width` x `height` opaque pixels.
 fn solid(width: u32, height: u32, rgba: [u8; 4]) -> Vec<u8> {
@@ -289,6 +289,90 @@ fn an_ignored_region_reaching_outside_the_image_is_clipped() {
     assert_eq!(result.verdict, Verdict::Match);
     assert_eq!(result.diff_pixels, 0);
     assert_eq!(result.diff_ratio, 0.0);
+}
+
+#[test]
+fn a_full_comparison_is_not_marked_as_stopped() {
+    let (base, changed) = quadrant_changed();
+    let a = Image::from_rgba8(4, 4, &base).unwrap();
+    let b = Image::from_rgba8(4, 4, &changed).unwrap();
+
+    let result = compare(
+        &a,
+        &b,
+        &CompareOptions {
+            detect_antialiasing: false,
+            ..CompareOptions::default()
+        },
+    );
+
+    assert_eq!(result.diff_pixels, 4);
+    assert!(!result.stopped_early);
+}
+
+#[test]
+fn the_scan_stops_once_the_limit_is_passed() {
+    let (base, changed) = quadrant_changed();
+    let a = Image::from_rgba8(4, 4, &base).unwrap();
+    let b = Image::from_rgba8(4, 4, &changed).unwrap();
+
+    let result = compare(
+        &a,
+        &b,
+        &CompareOptions {
+            detect_antialiasing: false,
+            fail_fast: Some(FailFast { max_diff_pixels: 1 }),
+            ..CompareOptions::default()
+        },
+    );
+
+    assert_eq!(result.verdict, Verdict::Differ);
+    assert_eq!(result.diff_pixels, 2);
+    assert!(result.stopped_early);
+}
+
+#[test]
+fn a_limit_the_image_stays_under_leaves_the_counts_exact() {
+    let (base, changed) = quadrant_changed();
+    let a = Image::from_rgba8(4, 4, &base).unwrap();
+    let b = Image::from_rgba8(4, 4, &changed).unwrap();
+
+    let result = compare(
+        &a,
+        &b,
+        &CompareOptions {
+            detect_antialiasing: false,
+            fail_fast: Some(FailFast { max_diff_pixels: 4 }),
+            ..CompareOptions::default()
+        },
+    );
+
+    assert_eq!(result.diff_pixels, 4);
+    assert_eq!(result.diff_ratio, 4.0 / 16.0);
+    assert!(!result.stopped_early);
+}
+
+#[test]
+fn a_limit_of_zero_stops_at_the_first_difference() {
+    let (base, changed) = quadrant_changed();
+    let a = Image::from_rgba8(4, 4, &base).unwrap();
+    let b = Image::from_rgba8(4, 4, &changed).unwrap();
+
+    let result = compare(
+        &a,
+        &b,
+        &CompareOptions {
+            detect_antialiasing: false,
+            fail_fast: Some(FailFast { max_diff_pixels: 0 }),
+            ..CompareOptions::default()
+        },
+    );
+
+    assert_eq!(result.verdict, Verdict::Differ);
+    assert_eq!(result.diff_pixels, 1);
+    // The first pixel of the image is the first difference.
+    assert_eq!(result.diff_ratio, 1.0);
+    assert!(result.stopped_early);
 }
 
 #[test]

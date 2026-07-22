@@ -38,6 +38,10 @@ pub struct CompareOptions {
     /// [`CompareResult::diff_ratio`]. Parts reaching outside the image are
     /// ignored.
     pub ignore_regions: Vec<Rect>,
+    /// Limit at which the comparison stops before reaching the last pixel.
+    ///
+    /// `None`, the default, walks every pixel and reports exact counts.
+    pub fail_fast: Option<FailFast>,
 }
 
 impl Default for CompareOptions {
@@ -46,8 +50,22 @@ impl Default for CompareOptions {
             threshold: 0.1,
             detect_antialiasing: true,
             ignore_regions: Vec::new(),
+            fail_fast: None,
         }
     }
+}
+
+/// How much difference a comparison looks for before giving up.
+///
+/// A caller that only needs to know whether two images differ can stop at the
+/// first difference instead of counting all of them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FailFast {
+    /// Number of differing pixels to tolerate before stopping.
+    ///
+    /// The scan stops once more than this many pixels have been found, so `0`
+    /// stops at the first difference.
+    pub max_diff_pixels: u64,
 }
 
 impl CompareOptions {
@@ -87,6 +105,11 @@ pub struct CompareResult {
     /// `diff_pixels` divided by the number of compared pixels, or `0.0` when
     /// nothing was compared.
     pub diff_ratio: f64,
+    /// Whether the comparison stopped at the [`FailFast`] limit.
+    ///
+    /// When it did, `diff_pixels` and `diff_ratio` are lower bounds rather
+    /// than counts of the whole image.
+    pub stopped_early: bool,
 }
 
 /// Compares two images pixel by pixel.
@@ -99,6 +122,7 @@ pub fn compare(a: &Image<'_>, b: &Image<'_>, opts: &CompareOptions) -> CompareRe
             verdict: Verdict::SizeMismatch,
             diff_pixels: 0,
             diff_ratio: 0.0,
+            stopped_early: false,
         };
     }
 
@@ -106,9 +130,16 @@ pub fn compare(a: &Image<'_>, b: &Image<'_>, opts: &CompareOptions) -> CompareRe
     let mask = Mask::new(&opts.ignore_regions, a.width(), a.height());
     let (left, right) = (a.pixels(), b.pixels());
 
+    // The scan runs until it has found more differing pixels than the limit
+    // tolerates, so a limit of zero stops at the first difference.
+    let limit = opts.fail_fast.map_or(u64::MAX, |fail_fast| {
+        fail_fast.max_diff_pixels.saturating_add(1)
+    });
+
     let mut diff_pixels = 0u64;
     let mut compared = 0u64;
-    for y in 0..a.height() {
+    let mut stopped_early = false;
+    'scan: for y in 0..a.height() {
         let row = y as usize * a.width() as usize;
         for x in 0..a.width() {
             if mask.excludes(x, y) {
@@ -129,6 +160,10 @@ pub fn compare(a: &Image<'_>, b: &Image<'_>, opts: &CompareOptions) -> CompareRe
                 continue;
             }
             diff_pixels += 1;
+            if diff_pixels >= limit {
+                stopped_early = true;
+                break 'scan;
+            }
         }
     }
 
@@ -144,5 +179,6 @@ pub fn compare(a: &Image<'_>, b: &Image<'_>, opts: &CompareOptions) -> CompareRe
         } else {
             diff_pixels as f64 / compared as f64
         },
+        stopped_early,
     }
 }
