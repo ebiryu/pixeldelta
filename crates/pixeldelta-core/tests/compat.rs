@@ -50,10 +50,11 @@ fn decode(path: &Path) -> Decoded {
     }
 }
 
-/// One `fixture threshold diff_pixels` row of `expected.txt`.
+/// One `fixture threshold aa diff_pixels` row of `expected.txt`.
 struct Expectation {
     fixture: String,
     threshold: f32,
+    detect_antialiasing: bool,
     diff_pixels: u64,
 }
 
@@ -72,6 +73,11 @@ fn expectations() -> Vec<Expectation> {
             Expectation {
                 fixture: next().to_string(),
                 threshold: next().parse().expect("threshold parses"),
+                detect_antialiasing: match next() {
+                    "on" => true,
+                    "off" => false,
+                    other => panic!("unknown aa column {other}"),
+                },
                 diff_pixels: next().parse().expect("diff pixel count parses"),
             }
         })
@@ -95,14 +101,15 @@ fn diff_pixel_counts_match_pixelmatch() {
             &b,
             &CompareOptions {
                 threshold: expected.threshold,
+                detect_antialiasing: expected.detect_antialiasing,
             },
         );
-
-        assert_eq!(
-            result.diff_pixels, expected.diff_pixels,
-            "{} at threshold {}",
-            expected.fixture, expected.threshold
+        let case = format!(
+            "{} at threshold {} with aa {}",
+            expected.fixture, expected.threshold, expected.detect_antialiasing
         );
+
+        assert_eq!(result.diff_pixels, expected.diff_pixels, "{case}");
         assert_eq!(
             result.verdict,
             if expected.diff_pixels == 0 {
@@ -110,9 +117,7 @@ fn diff_pixel_counts_match_pixelmatch() {
             } else {
                 Verdict::Differ
             },
-            "{} at threshold {}",
-            expected.fixture,
-            expected.threshold
+            "{case}"
         );
     }
 }
@@ -123,7 +128,14 @@ fn every_fixture_compares_equal_to_itself() {
         let base = decode(&fixtures_dir().join(&expected.fixture).join("base.png"));
         let a = Image::from_rgba8(base.width, base.height, &base.data).expect("base wraps");
 
-        let result = compare(&a, &a, &CompareOptions { threshold: 0.0 });
+        let result = compare(
+            &a,
+            &a,
+            &CompareOptions {
+                threshold: 0.0,
+                ..CompareOptions::default()
+            },
+        );
 
         assert_eq!(result.verdict, Verdict::Match, "{}", expected.fixture);
         assert_eq!(result.diff_pixels, 0, "{}", expected.fixture);

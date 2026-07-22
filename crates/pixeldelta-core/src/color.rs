@@ -54,25 +54,56 @@ pub fn color_delta(a: &[u8; 4], b: &[u8; 4], offset: usize) -> f32 {
         return 0.0;
     }
 
-    let mut dr = f32::from(a[0]) - f32::from(b[0]);
-    let mut dg = f32::from(a[1]) - f32::from(b[1]);
-    let mut db = f32::from(a[2]) - f32::from(b[2]);
-
-    if a[3] < 255 || b[3] < 255 {
-        let alpha_a = f32::from(a[3]);
-        let alpha_b = f32::from(b[3]);
-        let da = alpha_a - alpha_b;
-        let [red_bg, green_bg, blue_bg] = checkerboard_background(offset);
-        dr = (f32::from(a[0]) * alpha_a - f32::from(b[0]) * alpha_b - red_bg * da) / 255.0;
-        dg = (f32::from(a[1]) * alpha_a - f32::from(b[1]) * alpha_b - green_bg * da) / 255.0;
-        db = (f32::from(a[2]) * alpha_a - f32::from(b[2]) * alpha_b - blue_bg * da) / 255.0;
-    }
+    let [dr, dg, db] = channel_deltas(a, b, offset);
 
     let y = dr * R_TO_Y + dg * G_TO_Y + db * B_TO_Y;
     let i = dr * R_TO_I + dg * G_TO_I + db * B_TO_I;
     let q = dr * R_TO_Q + dg * G_TO_Q + db * B_TO_Q;
 
     Y_WEIGHT * y * y + I_WEIGHT * i * i + Q_WEIGHT * q * q
+}
+
+/// Brightness difference between two RGBA pixels, positive when `a` is the
+/// brighter one.
+///
+/// This is the luminance term of [`color_delta`] on its own, kept signed. The
+/// anti-aliasing detector needs the direction of the difference, which the
+/// squared distance discards.
+pub fn brightness_delta(a: &[u8; 4], b: &[u8; 4], offset: usize) -> f32 {
+    if a == b {
+        return 0.0;
+    }
+
+    let [dr, dg, db] = channel_deltas(a, b, offset);
+
+    dr * R_TO_Y + dg * G_TO_Y + db * B_TO_Y
+}
+
+/// Per-channel differences the YIQ transform is applied to.
+///
+/// Opaque pixels contribute their raw channel differences. If either pixel is
+/// semi-transparent, both are composited onto the background at `offset` first.
+fn channel_deltas(a: &[u8; 4], b: &[u8; 4], offset: usize) -> [f32; 3] {
+    if a[3] == 255 && b[3] == 255 {
+        return [
+            f32::from(a[0]) - f32::from(b[0]),
+            f32::from(a[1]) - f32::from(b[1]),
+            f32::from(a[2]) - f32::from(b[2]),
+        ];
+    }
+
+    let alpha_a = f32::from(a[3]);
+    let alpha_b = f32::from(b[3]);
+    let da = alpha_a - alpha_b;
+    let background = checkerboard_background(offset);
+    let mut deltas = [0.0; 3];
+    for (channel, delta) in deltas.iter_mut().enumerate() {
+        *delta = (f32::from(a[channel]) * alpha_a
+            - f32::from(b[channel]) * alpha_b
+            - background[channel] * da)
+            / 255.0;
+    }
+    deltas
 }
 
 #[cfg(test)]

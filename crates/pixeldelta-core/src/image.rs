@@ -60,6 +60,12 @@ impl<'a> Image<'a> {
         &self.data[..len]
     }
 
+    /// Pixels as four-byte groups, `width * height` of them.
+    pub fn pixels(&self) -> &'a [[u8; BYTES_PER_PIXEL]] {
+        let (pixels, _) = self.as_bytes().as_chunks::<BYTES_PER_PIXEL>();
+        pixels
+    }
+
     /// Whether both images have the same dimensions.
     pub fn same_size_as(&self, other: &Image<'_>) -> bool {
         self.width == other.width && self.height == other.height

@@ -4,9 +4,11 @@
 //! differ perceptually. It performs no I/O: decoding and encoding belong to the
 //! layers above.
 
+mod antialias;
 mod color;
 mod image;
 
+use antialias::is_antialiased;
 use color::color_delta;
 pub use color::MAX_COLOR_DELTA;
 pub use image::{Image, ImageError, BYTES_PER_PIXEL};
@@ -22,11 +24,19 @@ pub struct CompareOptions {
     /// Values outside `[0, 1]` are clamped, and a value that is not a number
     /// is treated as `0`.
     pub threshold: f32,
+    /// Whether pixels that differ only by anti-aliasing are excluded.
+    ///
+    /// The default of `true` matches pixelmatch, whose `includeAA: false`
+    /// default runs the same detector.
+    pub detect_antialiasing: bool,
 }
 
 impl Default for CompareOptions {
     fn default() -> Self {
-        Self { threshold: 0.1 }
+        Self {
+            threshold: 0.1,
+            detect_antialiasing: true,
+        }
     }
 }
 
@@ -83,14 +93,23 @@ pub fn compare(a: &Image<'_>, b: &Image<'_>, opts: &CompareOptions) -> CompareRe
     }
 
     let max_delta = opts.max_delta();
-    let (left, _) = a.as_bytes().as_chunks::<BYTES_PER_PIXEL>();
-    let (right, _) = b.as_bytes().as_chunks::<BYTES_PER_PIXEL>();
+    let width = a.width() as usize;
 
     let mut diff_pixels = 0u64;
-    for (index, (pa, pb)) in left.iter().zip(right).enumerate() {
-        if color_delta(pa, pb, index * BYTES_PER_PIXEL) > max_delta {
-            diff_pixels += 1;
+    for (index, (pa, pb)) in a.pixels().iter().zip(b.pixels()).enumerate() {
+        if color_delta(pa, pb, index * BYTES_PER_PIXEL) <= max_delta {
+            continue;
         }
+        // Anti-aliasing is decided only for pixels that already differ. It
+        // reads eight neighbors per image, so running it on every pixel would
+        // cost more than the comparison itself.
+        if opts.detect_antialiasing {
+            let (x, y) = ((index % width) as u32, (index / width) as u32);
+            if is_antialiased(a, b, x, y) || is_antialiased(b, a, x, y) {
+                continue;
+            }
+        }
+        diff_pixels += 1;
     }
 
     let total = a.pixel_count();
