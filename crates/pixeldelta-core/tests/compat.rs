@@ -102,6 +102,7 @@ fn diff_pixel_counts_match_pixelmatch() {
             &CompareOptions {
                 threshold: expected.threshold,
                 detect_antialiasing: expected.detect_antialiasing,
+                ..CompareOptions::default()
             },
         );
         let case = format!(

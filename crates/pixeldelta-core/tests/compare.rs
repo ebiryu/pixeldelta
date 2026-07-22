@@ -1,4 +1,4 @@
-use pixeldelta_core::{compare, CompareOptions, Image, Verdict};
+use pixeldelta_core::{compare, CompareOptions, Image, Rect, Verdict};
 
 /// Builds a solid image of `width` x `height` opaque pixels.
 fn solid(width: u32, height: u32, rgba: [u8; 4]) -> Vec<u8> {
@@ -196,6 +196,99 @@ fn detection_keeps_a_change_that_fills_an_area() {
 
     assert_eq!(result.verdict, Verdict::Differ);
     assert_eq!(result.diff_pixels, 16);
+}
+
+/// Builds a 4x4 black image with the four pixels of the top left quadrant
+/// turned white.
+fn quadrant_changed() -> (Vec<u8>, Vec<u8>) {
+    let base = solid(4, 4, [0, 0, 0, 255]);
+    let mut changed = base.clone();
+    for y in 0..2 {
+        for x in 0..2 {
+            let pos = (y * 4 + x) * 4;
+            changed[pos..pos + 4].copy_from_slice(&[255, 255, 255, 255]);
+        }
+    }
+    (base, changed)
+}
+
+#[test]
+fn a_difference_inside_an_ignored_region_is_not_counted() {
+    let (base, changed) = quadrant_changed();
+    let a = Image::from_rgba8(4, 4, &base).unwrap();
+    let b = Image::from_rgba8(4, 4, &changed).unwrap();
+
+    let result = compare(
+        &a,
+        &b,
+        &CompareOptions {
+            detect_antialiasing: false,
+            ignore_regions: vec![Rect {
+                x: 0,
+                y: 0,
+                width: 2,
+                height: 2,
+            }],
+            ..CompareOptions::default()
+        },
+    );
+
+    assert_eq!(result.verdict, Verdict::Match);
+    assert_eq!(result.diff_pixels, 0);
+}
+
+#[test]
+fn an_ignored_region_leaves_the_difference_beside_it() {
+    let (base, changed) = quadrant_changed();
+    let a = Image::from_rgba8(4, 4, &base).unwrap();
+    let b = Image::from_rgba8(4, 4, &changed).unwrap();
+
+    let result = compare(
+        &a,
+        &b,
+        &CompareOptions {
+            detect_antialiasing: false,
+            // Covers the left column of the changed quadrant only.
+            ignore_regions: vec![Rect {
+                x: 0,
+                y: 0,
+                width: 1,
+                height: 2,
+            }],
+            ..CompareOptions::default()
+        },
+    );
+
+    assert_eq!(result.verdict, Verdict::Differ);
+    assert_eq!(result.diff_pixels, 2);
+    // Two of the sixteen pixels were left out of the comparison.
+    assert_eq!(result.diff_ratio, 2.0 / 14.0);
+}
+
+#[test]
+fn an_ignored_region_reaching_outside_the_image_is_clipped() {
+    let (base, changed) = quadrant_changed();
+    let a = Image::from_rgba8(4, 4, &base).unwrap();
+    let b = Image::from_rgba8(4, 4, &changed).unwrap();
+
+    let result = compare(
+        &a,
+        &b,
+        &CompareOptions {
+            detect_antialiasing: false,
+            ignore_regions: vec![Rect {
+                x: 0,
+                y: 0,
+                width: u32::MAX,
+                height: u32::MAX,
+            }],
+            ..CompareOptions::default()
+        },
+    );
+
+    assert_eq!(result.verdict, Verdict::Match);
+    assert_eq!(result.diff_pixels, 0);
+    assert_eq!(result.diff_ratio, 0.0);
 }
 
 #[test]

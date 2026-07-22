@@ -7,11 +7,14 @@
 mod antialias;
 mod color;
 mod image;
+mod region;
 
 use antialias::is_antialiased;
 use color::color_delta;
 pub use color::MAX_COLOR_DELTA;
 pub use image::{Image, ImageError, BYTES_PER_PIXEL};
+use region::Mask;
+pub use region::Rect;
 
 /// Options controlling a comparison.
 #[derive(Debug, Clone, PartialEq)]
@@ -29,6 +32,12 @@ pub struct CompareOptions {
     /// The default of `true` matches pixelmatch, whose `includeAA: false`
     /// default runs the same detector.
     pub detect_antialiasing: bool,
+    /// Regions left out of the comparison.
+    ///
+    /// Pixels inside any of them are neither compared nor counted towards
+    /// [`CompareResult::diff_ratio`]. Parts reaching outside the image are
+    /// ignored.
+    pub ignore_regions: Vec<Rect>,
 }
 
 impl Default for CompareOptions {
@@ -36,6 +45,7 @@ impl Default for CompareOptions {
         Self {
             threshold: 0.1,
             detect_antialiasing: true,
+            ignore_regions: Vec::new(),
         }
     }
 }
@@ -93,26 +103,35 @@ pub fn compare(a: &Image<'_>, b: &Image<'_>, opts: &CompareOptions) -> CompareRe
     }
 
     let max_delta = opts.max_delta();
-    let width = a.width() as usize;
+    let mask = Mask::new(&opts.ignore_regions, a.width(), a.height());
+    let (left, right) = (a.pixels(), b.pixels());
 
     let mut diff_pixels = 0u64;
-    for (index, (pa, pb)) in a.pixels().iter().zip(b.pixels()).enumerate() {
-        if color_delta(pa, pb, index * BYTES_PER_PIXEL) <= max_delta {
-            continue;
-        }
-        // Anti-aliasing is decided only for pixels that already differ. It
-        // reads eight neighbors per image, so running it on every pixel would
-        // cost more than the comparison itself.
-        if opts.detect_antialiasing {
-            let (x, y) = ((index % width) as u32, (index / width) as u32);
-            if is_antialiased(a, b, x, y) || is_antialiased(b, a, x, y) {
+    let mut compared = 0u64;
+    for y in 0..a.height() {
+        let row = y as usize * a.width() as usize;
+        for x in 0..a.width() {
+            if mask.excludes(x, y) {
                 continue;
             }
+            compared += 1;
+
+            let index = row + x as usize;
+            if color_delta(&left[index], &right[index], index * BYTES_PER_PIXEL) <= max_delta {
+                continue;
+            }
+            // Anti-aliasing is decided only for pixels that already differ. It
+            // reads eight neighbors per image, so running it on every pixel
+            // would cost more than the comparison itself.
+            if opts.detect_antialiasing
+                && (is_antialiased(a, b, x, y) || is_antialiased(b, a, x, y))
+            {
+                continue;
+            }
+            diff_pixels += 1;
         }
-        diff_pixels += 1;
     }
 
-    let total = a.pixel_count();
     CompareResult {
         verdict: if diff_pixels == 0 {
             Verdict::Match
@@ -120,10 +139,10 @@ pub fn compare(a: &Image<'_>, b: &Image<'_>, opts: &CompareOptions) -> CompareRe
             Verdict::Differ
         },
         diff_pixels,
-        diff_ratio: if total == 0 {
+        diff_ratio: if compared == 0 {
             0.0
         } else {
-            diff_pixels as f64 / total as f64
+            diff_pixels as f64 / compared as f64
         },
     }
 }
