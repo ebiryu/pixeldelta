@@ -640,3 +640,78 @@ fn a_block_change_is_one_cluster_over_its_bounds() {
         ((x1 - x0) * (y1 - y0)) as u64
     );
 }
+
+/// Paints a `w`x`h` filled block of `color` at (`x`, `y`) on a black canvas.
+fn block(canvas_w: u32, canvas_h: u32, x: u32, y: u32, w: u32, h: u32, color: [u8; 4]) -> Vec<u8> {
+    let mut data = solid(canvas_w, canvas_h, [0, 0, 0, 255]);
+    for row in y..y + h {
+        for col in x..x + w {
+            let at = (row as usize * canvas_w as usize + col as usize) * 4;
+            data[at..at + 4].copy_from_slice(&color);
+        }
+    }
+    data
+}
+
+#[test]
+fn a_moved_block_reports_its_displacement() {
+    let white = [255, 255, 255, 255];
+    let base = block(48, 32, 6, 10, 5, 5, white);
+    let head = block(48, 32, 10, 14, 5, 5, white); // moved by (4, 4)
+    let a = Image::from_rgba8(48, 32, &base).unwrap();
+    let b = Image::from_rgba8(48, 32, &head).unwrap();
+
+    let result = compare(
+        &a,
+        &b,
+        &CompareOptions {
+            layout_shift: true,
+            ..CompareOptions::default()
+        },
+    );
+
+    assert_eq!(result.clusters.len(), 1);
+    assert_eq!(result.clusters[0].displacement, Some((4, 4)));
+}
+
+#[test]
+fn a_recolored_block_reports_no_displacement() {
+    let base = block(48, 32, 10, 10, 6, 6, [255, 255, 255, 255]);
+    let head = block(48, 32, 10, 10, 6, 6, [220, 40, 40, 255]);
+    let a = Image::from_rgba8(48, 32, &base).unwrap();
+    let b = Image::from_rgba8(48, 32, &head).unwrap();
+
+    let result = compare(
+        &a,
+        &b,
+        &CompareOptions {
+            layout_shift: true,
+            ..CompareOptions::default()
+        },
+    );
+
+    assert_eq!(result.clusters.len(), 1);
+    assert_eq!(result.clusters[0].displacement, None);
+}
+
+#[test]
+fn displacement_stays_empty_without_the_layout_shift_option() {
+    let white = [255, 255, 255, 255];
+    let base = block(48, 32, 6, 10, 5, 5, white);
+    let head = block(48, 32, 10, 10, 5, 5, white);
+    let a = Image::from_rgba8(48, 32, &base).unwrap();
+    let b = Image::from_rgba8(48, 32, &head).unwrap();
+
+    // Clustering on, layout shift off: bounds are found, displacement is not.
+    let result = compare(
+        &a,
+        &b,
+        &CompareOptions {
+            cluster: true,
+            ..CompareOptions::default()
+        },
+    );
+
+    assert!(!result.clusters.is_empty());
+    assert!(result.clusters.iter().all(|c| c.displacement.is_none()));
+}

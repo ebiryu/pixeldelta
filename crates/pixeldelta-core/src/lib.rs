@@ -10,6 +10,7 @@ mod color;
 mod image;
 mod region;
 mod scan;
+mod shift;
 
 pub use cluster::Cluster;
 pub use color::MAX_COLOR_DELTA;
@@ -50,6 +51,12 @@ pub struct CompareOptions {
     /// per-pixel bitmap. Setting it builds one and reports where the
     /// differences sit.
     pub cluster: bool,
+    /// Whether each cluster is searched for the offset its content moved by.
+    ///
+    /// Setting it groups the differences as [`cluster`](Self::cluster) does and
+    /// fills [`Cluster::displacement`] for clusters that are a moved element
+    /// rather than a changed one. The default is `false`.
+    pub layout_shift: bool,
 }
 
 impl Default for CompareOptions {
@@ -60,6 +67,7 @@ impl Default for CompareOptions {
             ignore_regions: Vec::new(),
             fail_fast: None,
             cluster: false,
+            layout_shift: false,
         }
     }
 }
@@ -145,9 +153,11 @@ pub fn compare(a: &Image<'_>, b: &Image<'_>, opts: &CompareOptions) -> CompareRe
         };
     }
 
-    // The bitmap is only allocated when clustering is asked for, so the default
-    // comparison keeps the count-only path.
-    let mut bitmap = opts.cluster.then(|| vec![false; a.pixel_count() as usize]);
+    // The bitmap is only allocated when the spatial analysis is asked for, so
+    // the default comparison keeps the count-only path. The layout-shift search
+    // works per cluster, so it needs the clusters too.
+    let mut bitmap =
+        (opts.cluster || opts.layout_shift).then(|| vec![false; a.pixel_count() as usize]);
 
     let counts = scan(
         a,
@@ -166,10 +176,15 @@ pub fn compare(a: &Image<'_>, b: &Image<'_>, opts: &CompareOptions) -> CompareRe
         bitmap.as_deref_mut(),
     );
 
-    let clusters = match bitmap.as_deref_mut() {
+    let mut clusters = match bitmap.as_deref_mut() {
         Some(bitmap) => cluster::clusters(bitmap, a.width(), a.height()),
         None => Vec::new(),
     };
+    if opts.layout_shift {
+        for cluster in &mut clusters {
+            cluster.displacement = shift::displacement(a, b, cluster.bounds, opts.max_delta());
+        }
+    }
 
     CompareResult {
         verdict: if counts.diff_pixels == 0 {
