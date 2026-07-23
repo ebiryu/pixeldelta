@@ -7,7 +7,8 @@
 use core::ops::Range;
 use core::sync::atomic::{AtomicU64, Ordering};
 
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
+use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
+use rayon::slice::ParallelSliceMut;
 
 use crate::antialias::is_antialiased;
 use crate::color::color_delta;
@@ -53,6 +54,29 @@ impl Counts {
     }
 }
 
+/// Where a block's counts and, when clustering, its diff pixels accumulate.
+///
+/// The bitmap is the block's own rows, so its first row is subtracted from a
+/// pixel's `y` before indexing. When no bitmap is present the scan only counts.
+struct Sink<'a> {
+    counts: Counts,
+    bitmap: Option<&'a mut [bool]>,
+    first_row: u32,
+    width: u32,
+}
+
+impl Sink<'_> {
+    /// Counts the pixel at (`x`, `y`) as a difference and, when a bitmap is
+    /// present, marks it there.
+    fn mark(&mut self, x: u32, y: u32) {
+        self.counts.diff_pixels += 1;
+        if let Some(bitmap) = self.bitmap.as_deref_mut() {
+            let local = (y - self.first_row) as usize * self.width as usize + x as usize;
+            bitmap[local] = true;
+        }
+    }
+}
+
 /// What the scan compares against, derived from the caller's options.
 pub struct Params {
     /// Color delta above which a pixel counts as different.
@@ -84,68 +108,91 @@ impl Budget {
     }
 }
 
-/// Counts the pixels of `a` and `b` that differ.
+/// Counts the pixels of `a` and `b` that differ, and marks them in `bitmap`
+/// when one is given.
 ///
-/// Both images must have the same dimensions.
-pub fn scan(a: &Image<'_>, b: &Image<'_>, params: &Params) -> Counts {
+/// Both images must have the same dimensions, and `bitmap`, when present, must
+/// hold one entry per pixel.
+pub fn scan(a: &Image<'_>, b: &Image<'_>, params: &Params, bitmap: Option<&mut [bool]>) -> Counts {
     let budget = params.limit.map(|limit| Budget {
         found: AtomicU64::new(0),
         limit,
     });
 
     if a.pixel_count() < PARALLEL_MIN_PIXELS {
-        return scan_rows(a, b, params, budget.as_ref(), 0..a.height());
+        return scan_rows(a, b, params, budget.as_ref(), 0..a.height(), bitmap, 0);
     }
 
-    let blocks = a.height().div_ceil(ROWS_PER_BLOCK);
-    (0..blocks)
-        .into_par_iter()
-        .map(|block| {
-            let first = block * ROWS_PER_BLOCK;
-            let last = (first + ROWS_PER_BLOCK).min(a.height());
-            scan_rows(a, b, params, budget.as_ref(), first..last)
-        })
-        .reduce(Counts::default, Counts::merge)
+    let stride = a.width() as usize;
+    let block = |first: u32, bitmap: Option<&mut [bool]>| {
+        let last = (first + ROWS_PER_BLOCK).min(a.height());
+        scan_rows(a, b, params, budget.as_ref(), first..last, bitmap, first)
+    };
+
+    // Each block owns a disjoint range of rows, so the bitmap is split into the
+    // same ranges and handed out without any sharing.
+    match bitmap {
+        None => {
+            let blocks = a.height().div_ceil(ROWS_PER_BLOCK);
+            (0..blocks)
+                .into_par_iter()
+                .map(|index| block(index * ROWS_PER_BLOCK, None))
+                .reduce(Counts::default, Counts::merge)
+        }
+        Some(bitmap) => bitmap
+            .par_chunks_mut(ROWS_PER_BLOCK as usize * stride)
+            .enumerate()
+            .map(|(index, rows)| block(index as u32 * ROWS_PER_BLOCK, Some(rows)))
+            .reduce(Counts::default, Counts::merge),
+    }
 }
 
-/// Counts the differing pixels of the rows in `rows`.
+/// Counts the differing pixels of the rows in `rows`, marking them in `bitmap`
+/// when present. `first_row` is the row `bitmap` starts at.
 fn scan_rows(
     a: &Image<'_>,
     b: &Image<'_>,
     params: &Params,
     budget: Option<&Budget>,
     rows: Range<u32>,
+    bitmap: Option<&mut [bool]>,
+    first_row: u32,
 ) -> Counts {
-    let mut counts = Counts::default();
+    let mut sink = Sink {
+        counts: Counts::default(),
+        bitmap,
+        first_row,
+        width: a.width(),
+    };
 
     for y in rows {
         // Another block may have reached the limit while this one was running.
         if budget.is_some_and(Budget::reached) {
-            counts.stopped_early = true;
-            return counts;
+            sink.counts.stopped_early = true;
+            return sink.counts;
         }
 
         // A row an ignored region reaches has to answer for each of its pixels
         // whether it is compared at all, which the chunked path cannot do.
         let outcome = if params.mask.reaches_row(y) {
-            scan_row_pixel_by_pixel(a, b, params, budget, y, &mut counts)
+            scan_row_pixel_by_pixel(a, b, params, budget, y, &mut sink)
         } else {
-            let outcome = scan_row_in_chunks(a, b, params, budget, y, &mut counts);
+            let outcome = scan_row_in_chunks(a, b, params, budget, y, &mut sink);
             // Every pixel of the row is compared, up to the one the scan
             // stopped at.
-            counts.compared += match outcome {
+            sink.counts.compared += match outcome {
                 Row::Finished => u64::from(a.width()),
                 Row::Stopped(x) => u64::from(x) + 1,
             };
             outcome
         };
         if let Row::Stopped(_) = outcome {
-            counts.stopped_early = true;
-            return counts;
+            sink.counts.stopped_early = true;
+            return sink.counts;
         }
     }
 
-    counts
+    sink.counts
 }
 
 /// Where a row scan ended.
@@ -166,7 +213,7 @@ fn scan_row_in_chunks(
     params: &Params,
     budget: Option<&Budget>,
     y: u32,
-    counts: &mut Counts,
+    sink: &mut Sink<'_>,
 ) -> Row {
     let width = a.width() as usize;
     let row = y as usize * width;
@@ -186,7 +233,7 @@ fn scan_row_in_chunks(
             let index = row + chunk * PIXELS_PER_CHUNK + lane;
             let column = (chunk * PIXELS_PER_CHUNK + lane) as u32;
             if color_delta(&first[lane], &second[lane], index * BYTES_PER_PIXEL) > params.max_delta
-                && !take_difference(a, b, params, budget, column, y, counts)
+                && !take_difference(a, b, params, budget, column, y, sink)
             {
                 return Row::Stopped(column);
             }
@@ -198,7 +245,7 @@ fn scan_row_in_chunks(
         let index = row + offset + lane;
         let column = (offset + lane) as u32;
         if color_delta(first, second, index * BYTES_PER_PIXEL) > params.max_delta
-            && !take_difference(a, b, params, budget, column, y, counts)
+            && !take_difference(a, b, params, budget, column, y, sink)
         {
             return Row::Stopped(column);
         }
@@ -217,7 +264,7 @@ fn scan_row_pixel_by_pixel(
     params: &Params,
     budget: Option<&Budget>,
     y: u32,
-    counts: &mut Counts,
+    sink: &mut Sink<'_>,
 ) -> Row {
     let width = a.width();
     let row = y as usize * width as usize;
@@ -227,11 +274,11 @@ fn scan_row_pixel_by_pixel(
         if params.mask.excludes(x, y) {
             continue;
         }
-        counts.compared += 1;
+        sink.counts.compared += 1;
 
         let index = row + x as usize;
         if color_delta(&left[index], &right[index], index * BYTES_PER_PIXEL) > params.max_delta
-            && !take_difference(a, b, params, budget, x, y, counts)
+            && !take_difference(a, b, params, budget, x, y, sink)
         {
             return Row::Stopped(x);
         }
@@ -254,7 +301,7 @@ fn take_difference(
     budget: Option<&Budget>,
     x: u32,
     y: u32,
-    counts: &mut Counts,
+    sink: &mut Sink<'_>,
 ) -> bool {
     // Anti-aliasing is decided only for pixels that already differ. It reads
     // eight neighbors per image, so running it on every pixel would cost more
@@ -262,6 +309,6 @@ fn take_difference(
     if params.detect_antialiasing && (is_antialiased(a, b, x, y) || is_antialiased(b, a, x, y)) {
         return true;
     }
-    counts.diff_pixels += 1;
+    sink.mark(x, y);
     !budget.is_some_and(Budget::record)
 }

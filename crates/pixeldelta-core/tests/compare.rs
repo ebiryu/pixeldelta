@@ -535,3 +535,108 @@ fn a_limited_scan_of_a_large_image_stops_past_the_limit() {
     assert!(result.diff_pixels < (LARGE_SIDE * LARGE_SIDE) as u64 / 64);
     assert_eq!(result.verdict, Verdict::Differ);
 }
+
+#[test]
+fn clustering_is_off_by_default() {
+    let base = solid(4, 4, [0, 0, 0, 255]);
+    let mut changed = base.clone();
+    changed[0..4].copy_from_slice(&[255, 255, 255, 255]);
+    let a = Image::from_rgba8(4, 4, &base).unwrap();
+    let b = Image::from_rgba8(4, 4, &changed).unwrap();
+
+    let result = compare(&a, &b, &CompareOptions::default());
+
+    assert_eq!(result.diff_pixels, 1);
+    assert!(result.clusters.is_empty());
+}
+
+#[test]
+fn two_separated_changes_make_two_clusters() {
+    // A 5x5 black field with a differing pixel in two opposite corners.
+    let base = solid(5, 5, [0, 0, 0, 255]);
+    let mut changed = base.clone();
+    let paint = |buf: &mut [u8], x: usize, y: usize| {
+        let at = (y * 5 + x) * 4;
+        buf[at..at + 4].copy_from_slice(&[255, 255, 255, 255]);
+    };
+    paint(&mut changed, 0, 0);
+    paint(&mut changed, 4, 4);
+    let a = Image::from_rgba8(5, 5, &base).unwrap();
+    let b = Image::from_rgba8(5, 5, &changed).unwrap();
+
+    let result = compare(
+        &a,
+        &b,
+        &CompareOptions {
+            cluster: true,
+            ..CompareOptions::default()
+        },
+    );
+
+    assert_eq!(result.diff_pixels, 2);
+    assert_eq!(result.clusters.len(), 2);
+    assert_eq!(
+        result.clusters[0].bounds,
+        Rect {
+            x: 0,
+            y: 0,
+            width: 1,
+            height: 1
+        }
+    );
+    assert_eq!(result.clusters[0].diff_pixels, 1);
+    assert_eq!(
+        result.clusters[1].bounds,
+        Rect {
+            x: 4,
+            y: 4,
+            width: 1,
+            height: 1
+        }
+    );
+    // The spatial analysis is not filled in yet.
+    assert_eq!(result.clusters[0].displacement, None);
+    assert_eq!(result.clusters[0].ssim, None);
+}
+
+#[test]
+fn a_block_change_is_one_cluster_over_its_bounds() {
+    // A change filling a rectangle, larger than one row block so the parallel
+    // scan splits it and the clusters still join across the boundary.
+    let side = LARGE_SIDE;
+    let base = solid(side, side, [0, 0, 0, 255]);
+    let mut changed = base.clone();
+    let (x0, y0, x1, y1) = (100, 40, 300, 200);
+    for y in y0..y1 {
+        for x in x0..x1 {
+            let at = (y * side as usize + x) * 4;
+            changed[at..at + 4].copy_from_slice(&[255, 255, 255, 255]);
+        }
+    }
+    let a = Image::from_rgba8(side, side, &base).unwrap();
+    let b = Image::from_rgba8(side, side, &changed).unwrap();
+
+    let result = compare(
+        &a,
+        &b,
+        &CompareOptions {
+            cluster: true,
+            ..CompareOptions::default()
+        },
+    );
+
+    assert_eq!(result.clusters.len(), 1);
+    assert_eq!(
+        result.clusters[0].bounds,
+        Rect {
+            x: x0 as u32,
+            y: y0 as u32,
+            width: (x1 - x0) as u32,
+            height: (y1 - y0) as u32,
+        }
+    );
+    assert_eq!(
+        result.clusters[0].diff_pixels,
+        ((x1 - x0) * (y1 - y0)) as u64
+    );
+}

@@ -5,11 +5,13 @@
 //! layers above.
 
 mod antialias;
+mod cluster;
 mod color;
 mod image;
 mod region;
 mod scan;
 
+pub use cluster::Cluster;
 pub use color::MAX_COLOR_DELTA;
 pub use image::{Image, ImageError, BYTES_PER_PIXEL};
 use region::Mask;
@@ -42,6 +44,12 @@ pub struct CompareOptions {
     ///
     /// `None`, the default, walks every pixel and reports exact counts.
     pub fail_fast: Option<FailFast>,
+    /// Whether differing pixels are grouped into [`CompareResult::clusters`].
+    ///
+    /// The default of `false` keeps the count-only path, which allocates no
+    /// per-pixel bitmap. Setting it builds one and reports where the
+    /// differences sit.
+    pub cluster: bool,
 }
 
 impl Default for CompareOptions {
@@ -51,6 +59,7 @@ impl Default for CompareOptions {
             detect_antialiasing: true,
             ignore_regions: Vec::new(),
             fail_fast: None,
+            cluster: false,
         }
     }
 }
@@ -113,6 +122,12 @@ pub struct CompareResult {
     /// got before the limit was reached depends on the threads running it. A
     /// comparison that ran to the end reports the same counts every time.
     pub stopped_early: bool,
+    /// Connected groups of differing pixels.
+    ///
+    /// Empty unless [`CompareOptions::cluster`] was set. When the comparison
+    /// stopped at the [`FailFast`] limit, the groups cover only the pixels the
+    /// scan reached.
+    pub clusters: Vec<Cluster>,
 }
 
 /// Compares two images pixel by pixel.
@@ -126,8 +141,13 @@ pub fn compare(a: &Image<'_>, b: &Image<'_>, opts: &CompareOptions) -> CompareRe
             diff_pixels: 0,
             diff_ratio: 0.0,
             stopped_early: false,
+            clusters: Vec::new(),
         };
     }
+
+    // The bitmap is only allocated when clustering is asked for, so the default
+    // comparison keeps the count-only path.
+    let mut bitmap = opts.cluster.then(|| vec![false; a.pixel_count() as usize]);
 
     let counts = scan(
         a,
@@ -143,7 +163,13 @@ pub fn compare(a: &Image<'_>, b: &Image<'_>, opts: &CompareOptions) -> CompareRe
                 .fail_fast
                 .map(|fail_fast| fail_fast.max_diff_pixels.saturating_add(1)),
         },
+        bitmap.as_deref_mut(),
     );
+
+    let clusters = match bitmap.as_deref_mut() {
+        Some(bitmap) => cluster::clusters(bitmap, a.width(), a.height()),
+        None => Vec::new(),
+    };
 
     CompareResult {
         verdict: if counts.diff_pixels == 0 {
@@ -158,5 +184,6 @@ pub fn compare(a: &Image<'_>, b: &Image<'_>, opts: &CompareOptions) -> CompareRe
             counts.diff_pixels as f64 / counts.compared as f64
         },
         stopped_early: counts.stopped_early,
+        clusters,
     }
 }
