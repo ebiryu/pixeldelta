@@ -594,9 +594,10 @@ fn two_separated_changes_make_two_clusters() {
             height: 1
         }
     );
-    // The spatial analysis is not filled in yet.
+    // The layout-shift search did not run, so displacement stays empty, while
+    // clustering always fills the similarity score.
     assert_eq!(result.clusters[0].displacement, None);
-    assert_eq!(result.clusters[0].ssim, None);
+    assert!(result.clusters[0].ssim.is_some());
 }
 
 #[test]
@@ -714,4 +715,65 @@ fn displacement_stays_empty_without_the_layout_shift_option() {
 
     assert!(!result.clusters.is_empty());
     assert!(result.clusters.iter().all(|c| c.displacement.is_none()));
+}
+
+#[test]
+fn a_recolored_block_gets_a_low_similarity_score() {
+    let base = block(48, 32, 10, 10, 8, 8, [255, 255, 255, 255]);
+    let head = block(48, 32, 10, 10, 8, 8, [0, 0, 0, 255]); // white -> black in place
+    let a = Image::from_rgba8(48, 32, &base).unwrap();
+    let b = Image::from_rgba8(48, 32, &head).unwrap();
+
+    let result = compare(
+        &a,
+        &b,
+        &CompareOptions {
+            cluster: true,
+            ..CompareOptions::default()
+        },
+    );
+
+    assert_eq!(result.clusters.len(), 1);
+    let ssim = result.clusters[0]
+        .ssim
+        .expect("ssim is measured when clustering");
+    assert!(ssim < 0.5, "recolor similarity {ssim} should be low");
+}
+
+#[test]
+fn a_moved_block_is_structurally_similar_to_its_new_place() {
+    let white = [255, 255, 255, 255];
+    let base = block(48, 32, 6, 10, 6, 6, white);
+    let head = block(48, 32, 12, 10, 6, 6, white); // moved by (6, 0)
+    let a = Image::from_rgba8(48, 32, &base).unwrap();
+    let b = Image::from_rgba8(48, 32, &head).unwrap();
+
+    let result = compare(
+        &a,
+        &b,
+        &CompareOptions {
+            layout_shift: true,
+            ..CompareOptions::default()
+        },
+    );
+
+    assert_eq!(result.clusters.len(), 1);
+    assert_eq!(result.clusters[0].displacement, Some((6, 0)));
+    let ssim = result.clusters[0].ssim.expect("ssim is measured");
+    assert!(
+        ssim > 0.99,
+        "moved block similarity {ssim} should be near one"
+    );
+}
+
+#[test]
+fn similarity_stays_empty_without_clustering() {
+    let base = block(16, 16, 4, 4, 4, 4, [255, 255, 255, 255]);
+    let head = block(16, 16, 4, 4, 4, 4, [0, 0, 0, 255]);
+    let a = Image::from_rgba8(16, 16, &base).unwrap();
+    let b = Image::from_rgba8(16, 16, &head).unwrap();
+
+    let result = compare(&a, &b, &CompareOptions::default());
+
+    assert!(result.clusters.is_empty());
 }

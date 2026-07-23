@@ -11,6 +11,7 @@ mod image;
 mod region;
 mod scan;
 mod shift;
+mod ssim;
 
 pub use cluster::Cluster;
 pub use color::MAX_COLOR_DELTA;
@@ -180,10 +181,14 @@ pub fn compare(a: &Image<'_>, b: &Image<'_>, opts: &CompareOptions) -> CompareRe
         Some(bitmap) => cluster::clusters(bitmap, a.width(), a.height()),
         None => Vec::new(),
     };
-    if opts.layout_shift {
-        for cluster in &mut clusters {
+    for cluster in &mut clusters {
+        if opts.layout_shift {
             cluster.displacement = shift::displacement(a, b, cluster.bounds, opts.max_delta());
         }
+        // The similarity is measured against the displaced content when a shift
+        // was found, and against the same rectangle otherwise.
+        let offset = cluster.displacement.unwrap_or((0, 0));
+        cluster.ssim = Some(ssim::similarity(a, b, cluster.bounds, offset));
     }
 
     CompareResult {
