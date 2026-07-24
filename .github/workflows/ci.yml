@@ -82,18 +82,19 @@ jobs:
           - host: windows-latest
             target: x86_64-pc-windows-msvc
             build: pnpm build --target x86_64-pc-windows-msvc
+          # glibc targets cross-compile against the napi-rs toolchain (glibc
+          # 2.17), which keeps the binaries loadable on older distributions.
           - host: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            docker: ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-debian
-            build: pnpm build --target x86_64-unknown-linux-gnu
-          - host: ubuntu-latest
-            target: x86_64-unknown-linux-musl
-            docker: ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-alpine
-            build: pnpm build --target x86_64-unknown-linux-musl
+            build: pnpm build --target x86_64-unknown-linux-gnu --use-napi-cross
           - host: ubuntu-latest
             target: aarch64-unknown-linux-gnu
-            docker: ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-debian-aarch64
-            build: pnpm build --target aarch64-unknown-linux-gnu
+            build: pnpm build --target aarch64-unknown-linux-gnu --use-napi-cross
+          # musl cross-compiles with cargo-zigbuild, which needs Zig on PATH.
+          - host: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            zig: true
+            build: pnpm build --target x86_64-unknown-linux-musl -x
           - host: ubuntu-latest
             target: wasm32-wasip1-threads
             build: pnpm build --target wasm32-wasip1-threads
@@ -101,33 +102,24 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        if: ${{ !matrix.settings.docker }}
         with:
           node-version-file: .node-version
           cache: pnpm
       - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
-        if: ${{ !matrix.settings.docker }}
         with:
           toolchain: stable 1 weeks ago
           targets: ${{ matrix.settings.target }}
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           key: ${{ matrix.settings.target }}
-      - name: Install dependencies
-        if: ${{ !matrix.settings.docker }}
-        run: pnpm install --frozen-lockfile
-      - name: Build in Docker
-        if: ${{ matrix.settings.docker }}
-        uses: addnab/docker-run-action@4f65fabd2431ebc8d299f8e5a018d79a769ae185 # v3
+      # napi's -x cross build for musl runs cargo-zigbuild, which needs Zig.
+      - name: Set up Zig
+        if: ${{ matrix.settings.zig }}
+        uses: mlugg/setup-zig@v2 # pin to a SHA alongside the other actions
         with:
-          image: ${{ matrix.settings.docker }}
-          options: -v ${{ github.workspace }}:/build -w /build
-          run: |
-            corepack enable
-            pnpm install --frozen-lockfile
-            cd packages/pixeldelta && ${{ matrix.settings.build }}
-      - name: Build on host
-        if: ${{ !matrix.settings.docker }}
+          version: 0.14.1
+      - run: pnpm install --frozen-lockfile
+      - name: Build
         run: ${{ matrix.settings.build }}
         working-directory: packages/pixeldelta
         shell: bash
