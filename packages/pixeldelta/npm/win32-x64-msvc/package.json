@@ -20,5 +20,8 @@
   },
   "os": [
     "win32"
-  ]
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
 }

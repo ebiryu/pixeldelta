@@ -191,13 +191,17 @@ jobs:
       # A tagged release publishes over OIDC: no token, and npm attaches
       # provenance on its own. The bootstrap dispatch instead authenticates with
       # NPM_TOKEN and turns provenance on by hand, which token publishes need.
+      # prepublish only ships the platform packages to npm; --no-gh-release keeps
+      # it from creating a GitHub release, which this job has no token or write
+      # permission for. Their publishConfig sets access public so provenance
+      # holds for the first publish of each new name.
       - name: Publish
         working-directory: packages/pixeldelta
         run: |
           if [ "${{ inputs.bootstrap }}" = "true" ]; then
             npm config set provenance true
           fi
-          pnpm exec napi prepublish -t npm
+          pnpm exec napi prepublish -t npm --no-gh-release
           npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ inputs.bootstrap && secrets.NPM_TOKEN || '' }}
