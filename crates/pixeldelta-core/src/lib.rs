@@ -7,6 +7,7 @@
 mod antialias;
 mod cluster;
 mod color;
+mod diff_image;
 mod image;
 mod region;
 mod scan;
@@ -15,6 +16,7 @@ mod ssim;
 
 pub use cluster::Cluster;
 pub use color::MAX_COLOR_DELTA;
+pub use diff_image::{DiffImage, DiffStyle};
 pub use image::{Image, ImageError, BYTES_PER_PIXEL};
 use region::Mask;
 pub use region::Rect;
@@ -58,6 +60,12 @@ pub struct CompareOptions {
     /// fills [`Cluster::displacement`] for clusters that are a moved element
     /// rather than a changed one. The default is `false`.
     pub layout_shift: bool,
+    /// Style of the diff image to render, or `None` to render none.
+    ///
+    /// The default of `None` keeps the count-only path. Setting it builds the
+    /// per-pixel bitmap, as [`cluster`](Self::cluster) does, and renders
+    /// [`CompareResult::diff_image`].
+    pub diff: Option<DiffStyle>,
 }
 
 impl Default for CompareOptions {
@@ -69,6 +77,7 @@ impl Default for CompareOptions {
             fail_fast: None,
             cluster: false,
             layout_shift: false,
+            diff: None,
         }
     }
 }
@@ -137,6 +146,12 @@ pub struct CompareResult {
     /// stopped at the [`FailFast`] limit, the groups cover only the pixels the
     /// scan reached.
     pub clusters: Vec<Cluster>,
+    /// The rendered diff image.
+    ///
+    /// `None` unless [`CompareOptions::diff`] was set. When the comparison
+    /// stopped at the [`FailFast`] limit, pixels the scan did not reach show as
+    /// background rather than as differences.
+    pub diff_image: Option<DiffImage>,
 }
 
 /// Compares two images pixel by pixel.
@@ -151,14 +166,15 @@ pub fn compare(a: &Image<'_>, b: &Image<'_>, opts: &CompareOptions) -> CompareRe
             diff_ratio: 0.0,
             stopped_early: false,
             clusters: Vec::new(),
+            diff_image: None,
         };
     }
 
-    // The bitmap is only allocated when the spatial analysis is asked for, so
-    // the default comparison keeps the count-only path. The layout-shift search
-    // works per cluster, so it needs the clusters too.
-    let mut bitmap =
-        (opts.cluster || opts.layout_shift).then(|| vec![false; a.pixel_count() as usize]);
+    // The bitmap is only allocated when the spatial analysis or the diff image
+    // is asked for, so the default comparison keeps the count-only path. The
+    // layout-shift search works per cluster, so it needs the clusters too.
+    let mut bitmap = (opts.cluster || opts.layout_shift || opts.diff.is_some())
+        .then(|| vec![false; a.pixel_count() as usize]);
 
     let counts = scan(
         a,
@@ -176,6 +192,12 @@ pub fn compare(a: &Image<'_>, b: &Image<'_>, opts: &CompareOptions) -> CompareRe
         },
         bitmap.as_deref_mut(),
     );
+
+    // Rendered before clustering, which reads the same bitmap.
+    let diff_image = match (&opts.diff, bitmap.as_deref()) {
+        (Some(style), Some(bitmap)) => Some(diff_image::render(a, bitmap, style)),
+        _ => None,
+    };
 
     let mut clusters = match bitmap.as_deref_mut() {
         Some(bitmap) => cluster::clusters(bitmap, a.width(), a.height()),
@@ -205,5 +227,6 @@ pub fn compare(a: &Image<'_>, b: &Image<'_>, opts: &CompareOptions) -> CompareRe
         },
         stopped_early: counts.stopped_early,
         clusters,
+        diff_image,
     }
 }

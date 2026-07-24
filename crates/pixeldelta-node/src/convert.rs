@@ -22,6 +22,7 @@ pub fn to_options(js: JsCompareOptions) -> Result<CompareOptions> {
         fail_fast: js.fail_fast.map(to_fail_fast),
         cluster: js.cluster.unwrap_or(defaults.cluster),
         layout_shift: js.layout_shift.unwrap_or(defaults.layout_shift),
+        diff: defaults.diff,
     })
 }
 

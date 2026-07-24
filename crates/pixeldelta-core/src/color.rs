@@ -42,6 +42,15 @@ fn checkerboard_background(offset: usize) -> [f32; 3] {
     [shade(RED_STRIDE), shade(GREEN_STRIDE), shade(BLUE_STRIDE)]
 }
 
+/// Rec. 601 luminance of a pixel, ignoring its alpha.
+///
+/// This is the Y term the YIQ transform places most of the color distance on,
+/// applied to a single pixel rather than a difference. The diff image renders
+/// unchanged pixels in this luminance.
+pub fn luminance(pixel: &[u8; 4]) -> f32 {
+    f32::from(pixel[0]) * R_TO_Y + f32::from(pixel[1]) * G_TO_Y + f32::from(pixel[2]) * B_TO_Y
+}
+
 /// Perceptual distance between two RGBA pixels in the YIQ color space.
 ///
 /// `offset` is the byte offset of the pixel within its image, which selects the
