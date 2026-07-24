@@ -1,8 +1,8 @@
 # Same-machine comparison
 
 Measures pixeldelta against pixelmatch and odiff on the benchmark fixtures
-under `crates/pixeldelta-core/benches/fixtures`. What is held equal, and why
-honeydiff is not here, is in `docs/design.md` section 9.1.
+under `crates/pixeldelta-core/benches/fixtures`. What is held equal across the
+three tools is described under "What it reports" below.
 
 ## Run
 

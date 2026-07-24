@@ -1,7 +1,7 @@
 # Task runner for pixeldelta. Run `just` to list the recipes.
 #
 # `just check` is what has to pass before a commit. The recipes below it apply
-# to particular kinds of work and are listed in docs/implementation-guide.md.
+# to particular kinds of work.
 
 _default:
     @just --list

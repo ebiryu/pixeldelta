@@ -1,6 +1,5 @@
 // Compares pixeldelta against pixelmatch and odiff on the committed benchmark
-// fixtures, on one machine. See docs/design.md section 9.1 for what is and is
-// not held equal.
+// fixtures, on one machine.
 //
 //   pnpm install
 //   cargo build --release --example compare_paths   # from the repo root
