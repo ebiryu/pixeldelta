@@ -97,6 +97,11 @@ ignore = [
 allow = [
     "MIT",
     "Apache-2.0",
+    # Covers the character tables in unicode-ident, which proc-macro2 uses to
+    # tokenize the derives. It runs at build time and none of it reaches the
+    # published binaries. The license is permissive and its only condition is
+    # the same notice retention MIT requires.
+    "Unicode-3.0",
 ]
 # The confidence threshold for detecting a license from license text.
 # The higher the value, the more closely the license text must be to the

@@ -1,0 +1,20 @@
+[package]
+name = "pixeldelta-io"
+description = "Image decoding for pixeldelta"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+# Decodes PNG. Writing a decoder here would mean inflate, the five filters,
+# interlacing and the ancillary chunks, none of which is specific to pixeldelta.
+png = "0.18"
+# Derives Display and Error for DecodeError, which callers match on.
+thiserror = "2.0"
+
+[dev-dependencies]
+# Builds the color types the tests decode. The encoder is a separate module of
+# the same crate as the decoder under test.
+png = "0.18"

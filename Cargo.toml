@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/pixeldelta-core"]
+members = ["crates/pixeldelta-core", "crates/pixeldelta-io"]
 resolver = "2"
 
 [workspace.package]
