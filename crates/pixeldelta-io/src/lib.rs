@@ -6,8 +6,10 @@
 
 mod format;
 mod png_decode;
+mod png_encode;
 
 pub use format::Format;
+pub use png_encode::encode as encode_png;
 
 use std::path::{Path, PathBuf};
 
@@ -62,6 +64,18 @@ pub enum DecodeError {
     /// The image is larger than the address space can hold.
     #[error("{width}x{height} pixels do not fit in memory")]
     TooLarge { width: u32, height: u32 },
+}
+
+/// Reasons an image cannot be encoded.
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum EncodeError {
+    /// The buffer does not hold `width * height * 4` bytes.
+    #[error("{expected} bytes expected for the given dimensions, {actual} given")]
+    WrongLength { expected: usize, actual: usize },
+    /// The encoder rejected the image.
+    #[error("the PNG could not be encoded: {message}")]
+    Failed { message: String },
 }
 
 /// Decodes an image from its bytes.
