@@ -12,10 +12,10 @@ env:
   # Matches the deployment target napi-rs builds its own macOS artifacts with.
   MACOSX_DEPLOYMENT_TARGET: "10.13"
 
+# The publish job widens this to id-token: write for OIDC; every other job only
+# reads the checkout.
 permissions:
   contents: read
-  # Lets npm attach a provenance statement to the published packages.
-  id-token: write
 
 on:
   push:
@@ -169,9 +169,11 @@ jobs:
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: pnpm
           registry-url: "https://registry.npmjs.org"
+      # Trusted publishing needs npm 11.5.1+, newer than the one Node bundles.
+      - run: npm install -g npm@latest
       - run: pnpm install --frozen-lockfile
       - name: Gather the built binaries
         uses: actions/download-artifact@v4
@@ -181,12 +183,12 @@ jobs:
       - name: Move each binary into its platform package
         run: pnpm --filter pixeldelta exec napi artifacts --output-dir ./artifacts
         working-directory: packages/pixeldelta
+      # Publishes over OIDC (trusted publishing): no token in the environment,
+      # and npm attaches provenance on its own. Each package name, the root and
+      # every platform one, needs a trusted publisher configured on npm and one
+      # token-bootstrapped first release; see packages/pixeldelta/PUBLISHING.md.
       - name: Publish
         working-directory: packages/pixeldelta
         run: |
-          npm config set provenance true
           pnpm exec napi prepublish -t npm --skip-gh-release
           npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
