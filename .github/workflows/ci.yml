@@ -189,5 +189,5 @@ jobs:
       - name: Publish
         working-directory: packages/pixeldelta
         run: |
-          pnpm exec napi prepublish -t npm --skip-gh-release
+          pnpm exec napi prepublish -t npm
           npm publish --access public
