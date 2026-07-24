@@ -36,6 +36,11 @@ node:
     pnpm --filter pixeldelta run build
     pnpm --filter pixeldelta test
 
+# Pack the package and load it from an empty project, to check the published
+# layout resolves on the host. See tools/smoke/README.md.
+smoke:
+    bash tools/smoke/run.sh
+
 # Check dependency licenses and security advisories. Run after adding one.
 deny:
     cargo deny check
