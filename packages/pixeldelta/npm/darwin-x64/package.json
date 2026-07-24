@@ -16,7 +16,7 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/ebiryu/pixeldelta.git",
-    "directory": "crates/pixeldelta-node"
+    "directory": "packages/pixeldelta"
   },
   "os": [
     "darwin"

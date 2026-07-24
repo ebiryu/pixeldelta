@@ -1,14 +1,13 @@
-# Installed by npm install.
+# Installed by pnpm.
 node_modules/
 
-# Built by `napi build`. The binaries are per-platform and the JS glue is
-# regenerated from the crate, so CI rebuilds all of it before publishing.
+# Compiled binaries. These are per-platform and are built in CI for each
+# target, so they are never committed. The JS glue beside them (index.js,
+# index.d.ts and the wasi loaders) is generated from the crate's API, is the
+# same on every host, and is committed so a fresh checkout can load and publish
+# without building first.
 *.node
 *.wasm
-index.js
-index.d.ts
-browser.js
-pixeldelta.wasi.cjs
-pixeldelta.wasi-browser.js
-wasi-worker.mjs
-wasi-worker-browser.mjs
+
+# Binaries gathered from the build jobs during a release.
+artifacts/

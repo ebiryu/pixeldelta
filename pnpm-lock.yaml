@@ -6,6 +6,8 @@ settings:
 
 importers:
 
+  .: {}
+
   packages/pixeldelta:
     devDependencies:
       '@napi-rs/cli':

@@ -1,0 +1,192 @@
+# Builds the Node addon for every published target, runs the Rust and Node
+# tests, and publishes to npm when a version tag is pushed.
+#
+# The build matrix follows the napi-rs layout: native runners for macOS and
+# Windows, the napi-rs Docker images for the Linux ABIs, and a plain runner for
+# the WebAssembly (WASI) fallback. Each job leaves one binary as an artifact,
+# and the publish job gathers them into the platform packages.
+name: CI
+
+env:
+  APP_NAME: pixeldelta
+  # Matches the deployment target napi-rs builds its own macOS artifacts with.
+  MACOSX_DEPLOYMENT_TARGET: "10.13"
+
+permissions:
+  contents: read
+  # Lets npm attach a provenance statement to the published packages.
+  id-token: write
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+  pull_request:
+
+jobs:
+  # The green-main invariant: formatting, lints and the workspace tests. The
+  # Node addon is left out here for the same reason `just test` leaves it out.
+  check:
+    name: Rust check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --all-targets --all-features -- -D warnings
+      - run: cargo test --workspace --exclude pixeldelta-node
+
+  # Builds at the MSRV so a newer feature slipping in is caught early.
+  msrv:
+    name: Build at MSRV 1.88
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.88
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo +1.88 check --workspace --all-targets
+
+  build:
+    name: Build ${{ matrix.settings.target }}
+    runs-on: ${{ matrix.settings.host }}
+    strategy:
+      fail-fast: false
+      matrix:
+        settings:
+          - host: macos-latest
+            target: aarch64-apple-darwin
+            build: pnpm build --target aarch64-apple-darwin
+          - host: macos-latest
+            target: x86_64-apple-darwin
+            build: pnpm build --target x86_64-apple-darwin
+          - host: windows-latest
+            target: x86_64-pc-windows-msvc
+            build: pnpm build --target x86_64-pc-windows-msvc
+          - host: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            docker: ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-debian
+            build: pnpm build --target x86_64-unknown-linux-gnu
+          - host: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            docker: ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-alpine
+            build: pnpm build --target x86_64-unknown-linux-musl
+          - host: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            docker: ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-debian-aarch64
+            build: pnpm build --target aarch64-unknown-linux-gnu
+          - host: ubuntu-latest
+            target: wasm32-wasip1-threads
+            build: pnpm build --target wasm32-wasip1-threads
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        if: ${{ !matrix.settings.docker }}
+        with:
+          node-version: 20
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+        if: ${{ !matrix.settings.docker }}
+        with:
+          targets: ${{ matrix.settings.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.settings.target }}
+      - name: Install dependencies
+        if: ${{ !matrix.settings.docker }}
+        run: pnpm install --frozen-lockfile
+      - name: Build in Docker
+        if: ${{ matrix.settings.docker }}
+        uses: addnab/docker-run-action@v3
+        with:
+          image: ${{ matrix.settings.docker }}
+          options: -v ${{ github.workspace }}:/build -w /build
+          run: |
+            corepack enable
+            pnpm install --frozen-lockfile
+            cd packages/pixeldelta && ${{ matrix.settings.build }}
+      - name: Build on host
+        if: ${{ !matrix.settings.docker }}
+        run: ${{ matrix.settings.build }}
+        working-directory: packages/pixeldelta
+        shell: bash
+      - name: Upload the binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: bindings-${{ matrix.settings.target }}
+          path: |
+            packages/pixeldelta/pixeldelta.*.node
+            packages/pixeldelta/pixeldelta.*.wasm
+          if-no-files-found: error
+
+  # Runs the Node tests against the freshly built native binary, on the hosts a
+  # runner can execute directly. The cross and WASI builds are exercised by the
+  # `npm i` smoke test after release, not here.
+  test:
+    name: Test ${{ matrix.settings.target }}
+    needs: build
+    runs-on: ${{ matrix.settings.host }}
+    strategy:
+      fail-fast: false
+      matrix:
+        settings:
+          - host: macos-latest
+            target: aarch64-apple-darwin
+          - host: windows-latest
+            target: x86_64-pc-windows-msvc
+          - host: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: bindings-${{ matrix.settings.target }}
+          path: packages/pixeldelta
+      - run: pnpm --filter pixeldelta test
+
+  publish:
+    name: Publish
+    runs-on: ubuntu-latest
+    needs: [check, msrv, build, test]
+    if: ${{ github.ref_type == 'tag' }}
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          registry-url: "https://registry.npmjs.org"
+      - run: pnpm install --frozen-lockfile
+      - name: Gather the built binaries
+        uses: actions/download-artifact@v4
+        with:
+          path: packages/pixeldelta/artifacts
+          merge-multiple: true
+      - name: Move each binary into its platform package
+        run: pnpm --filter pixeldelta exec napi artifacts --output-dir ./artifacts
+        working-directory: packages/pixeldelta
+      - name: Publish
+        working-directory: packages/pixeldelta
+        run: |
+          npm config set provenance true
+          pnpm exec napi prepublish -t npm --skip-gh-release
+          npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
