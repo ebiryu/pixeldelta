@@ -115,7 +115,7 @@ jobs:
       # napi's -x cross build for musl runs cargo-zigbuild, which needs Zig.
       - name: Set up Zig
         if: ${{ matrix.settings.zig }}
-        uses: mlugg/setup-zig@v2 # pin to a SHA alongside the other actions
+        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
         with:
           version: 0.14.1
       - run: pnpm install --frozen-lockfile
