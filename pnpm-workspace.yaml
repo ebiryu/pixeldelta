@@ -1,0 +1,6 @@
+# The npm packages pixeldelta publishes. The crates under crates/ are the Rust
+# workspace (Cargo.toml); this file is the JS side. The tools under tools/ keep
+# their own lockfiles so a change there cannot move the benchmark baseline, so
+# they are left out of the workspace.
+packages:
+  - "packages/*"

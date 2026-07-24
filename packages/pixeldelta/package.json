@@ -1,0 +1,44 @@
+{
+  "name": "pixeldelta",
+  "version": "0.0.0",
+  "description": "Fast image comparison engine with difference clustering",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ebiryu/pixeldelta.git",
+    "directory": "packages/pixeldelta"
+  },
+  "main": "index.js",
+  "types": "index.d.ts",
+  "files": [
+    "index.js",
+    "index.d.ts"
+  ],
+  "napi": {
+    "binaryName": "pixeldelta",
+    "packageName": "pixeldelta",
+    "targets": [
+      "aarch64-apple-darwin",
+      "x86_64-apple-darwin",
+      "x86_64-unknown-linux-gnu",
+      "x86_64-unknown-linux-musl",
+      "aarch64-unknown-linux-gnu",
+      "x86_64-pc-windows-msvc",
+      "wasm32-wasip1-threads"
+    ]
+  },
+  "engines": {
+    "node": ">= 16"
+  },
+  "scripts": {
+    "build": "napi build --platform --release --manifest-path ../../crates/pixeldelta-node/Cargo.toml --output-dir .",
+    "build:debug": "napi build --platform --manifest-path ../../crates/pixeldelta-node/Cargo.toml --output-dir .",
+    "artifacts": "napi artifacts",
+    "prepublishOnly": "napi prepublish -t npm",
+    "test": "node --test \"test/*.test.mjs\"",
+    "version": "napi version"
+  },
+  "devDependencies": {
+    "@napi-rs/cli": "^3"
+  }
+}

@@ -1,0 +1,14 @@
+# Installed by npm install.
+node_modules/
+
+# Built by `napi build`. The binaries are per-platform and the JS glue is
+# regenerated from the crate, so CI rebuilds all of it before publishing.
+*.node
+*.wasm
+index.js
+index.d.ts
+browser.js
+pixeldelta.wasi.cjs
+pixeldelta.wasi-browser.js
+wasi-worker.mjs
+wasi-worker-browser.mjs

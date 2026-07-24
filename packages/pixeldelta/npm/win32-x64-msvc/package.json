@@ -1,0 +1,24 @@
+{
+  "name": "pixeldelta-win32-x64-msvc",
+  "version": "0.0.0",
+  "cpu": [
+    "x64"
+  ],
+  "main": "pixeldelta.win32-x64-msvc.node",
+  "files": [
+    "pixeldelta.win32-x64-msvc.node"
+  ],
+  "description": "Fast image comparison engine with difference clustering",
+  "license": "MIT",
+  "engines": {
+    "node": ">= 16"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ebiryu/pixeldelta.git",
+    "directory": "crates/pixeldelta-node"
+  },
+  "os": [
+    "win32"
+  ]
+}

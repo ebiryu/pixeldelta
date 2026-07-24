@@ -1,0 +1,24 @@
+{
+  "name": "pixeldelta-darwin-x64",
+  "version": "0.0.0",
+  "cpu": [
+    "x64"
+  ],
+  "main": "pixeldelta.darwin-x64.node",
+  "files": [
+    "pixeldelta.darwin-x64.node"
+  ],
+  "description": "Fast image comparison engine with difference clustering",
+  "license": "MIT",
+  "engines": {
+    "node": ">= 16"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ebiryu/pixeldelta.git",
+    "directory": "crates/pixeldelta-node"
+  },
+  "os": [
+    "darwin"
+  ]
+}

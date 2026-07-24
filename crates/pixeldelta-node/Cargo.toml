@@ -1,0 +1,25 @@
+[package]
+name = "pixeldelta-node"
+description = "Node.js binding for pixeldelta"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+# napi loads the addon as a C dynamic library, which Node opens as a `.node`.
+crate-type = ["cdylib"]
+
+[dependencies]
+pixeldelta-core = { path = "../pixeldelta-core" }
+pixeldelta-io = { path = "../pixeldelta-io" }
+# Bridges to N-API. `napi-derive` generates the registration and the type
+# conversions; the async runtime runs the decode and compare off the JS thread.
+napi = { version = "3", default-features = false, features = ["napi4", "async"] }
+napi-derive = "3"
+
+[build-dependencies]
+# Emits the linker arguments that let the cdylib resolve the N-API symbols Node
+# provides at load time.
+napi-build = "2"

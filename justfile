@@ -22,8 +22,19 @@ lint:
     cargo clippy --all-targets --all-features -- -D warnings
 
 # Run the unit, integration, compatibility and property tests.
+#
+# The Node addon is left out: it is a cdylib against the N-API symbols Node
+# resolves at load time, so linking it into a test executable fails off macOS.
+# `just node` builds and tests it against Node instead.
 test:
-    cargo test --workspace
+    cargo test --workspace --exclude pixeldelta-node
+
+# Build the Node addon and run its tests against Node. The crate lives in
+# crates/pixeldelta-node; the npm package that wraps it is packages/pixeldelta.
+node:
+    pnpm install
+    pnpm --filter pixeldelta run build
+    pnpm --filter pixeldelta test
 
 # Check dependency licenses and security advisories. Run after adding one.
 deny:

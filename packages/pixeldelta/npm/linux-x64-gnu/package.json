@@ -1,0 +1,27 @@
+{
+  "name": "pixeldelta-linux-x64-gnu",
+  "version": "0.0.0",
+  "cpu": [
+    "x64"
+  ],
+  "main": "pixeldelta.linux-x64-gnu.node",
+  "files": [
+    "pixeldelta.linux-x64-gnu.node"
+  ],
+  "description": "Fast image comparison engine with difference clustering",
+  "license": "MIT",
+  "engines": {
+    "node": ">= 16"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ebiryu/pixeldelta.git",
+    "directory": "crates/pixeldelta-node"
+  },
+  "os": [
+    "linux"
+  ],
+  "libc": [
+    "glibc"
+  ]
+}
