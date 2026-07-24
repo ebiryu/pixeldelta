@@ -183,9 +183,7 @@ jobs:
         run: pnpm --filter pixeldelta exec napi artifacts --output-dir ./artifacts
         working-directory: packages/pixeldelta
       # Publishes over OIDC (trusted publishing): no token in the environment,
-      # and npm attaches provenance on its own. Each package name, the root and
-      # every platform one, needs a trusted publisher configured on npm and one
-      # token-bootstrapped first release; see packages/pixeldelta/PUBLISHING.md.
+      # and npm attaches provenance on its own.
       - name: Publish
         working-directory: packages/pixeldelta
         run: |
