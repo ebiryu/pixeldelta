@@ -40,6 +40,21 @@ pub struct JsCompareOptions {
     /// Whether each cluster is searched for the offset it moved by. Defaults to
     /// `false`.
     pub layout_shift: Option<bool>,
+    /// Style of the diff image to render, or omitted to render none.
+    ///
+    /// Passing `{}` renders it with the default style; `alpha` and `color`
+    /// override the parts given.
+    pub diff: Option<JsDiffStyle>,
+}
+
+/// Colors and dimming for the diff image.
+#[napi(object)]
+pub struct JsDiffStyle {
+    /// How far unchanged pixels are pulled toward white, in `[0, 1]`. Defaults
+    /// to `0.1`.
+    pub alpha: Option<f64>,
+    /// Color painted over differing pixels, as `[r, g, b]`. Defaults to red.
+    pub color: Option<Vec<u32>>,
 }
 
 /// A rectangle in pixel coordinates, covering `[x, x + width) x [y, y + height)`.
@@ -72,6 +87,17 @@ pub struct JsCompareResult {
     /// Connected groups of differing pixels. Empty unless `cluster` or
     /// `layoutShift` was set.
     pub clusters: Vec<JsCluster>,
+    /// The rendered diff image, or `null` unless `diff` was set.
+    pub diff_image: Option<JsDiffImage>,
+}
+
+/// A rendered diff image in RGBA8.
+#[napi(object)]
+pub struct JsDiffImage {
+    pub width: u32,
+    pub height: u32,
+    /// Pixel bytes, `width * height * 4` of them, row by row.
+    pub data: Uint8Array,
 }
 
 /// A connected group of differing pixels.

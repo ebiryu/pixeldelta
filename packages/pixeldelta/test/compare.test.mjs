@@ -57,6 +57,38 @@ test('clustering reports where the differences sit', async () => {
   }
 });
 
+test('no diff image is returned unless asked', async () => {
+  const result = await compare(fixture('blocks', 'base'), fixture('blocks', 'head'));
+  assert.ok(!result.diffImage);
+});
+
+test('the diff option returns a raw RGBA8 diff image', async () => {
+  const result = await compare(fixture('blocks', 'base'), fixture('blocks', 'head'), {
+    diff: {},
+  });
+  const diff = result.diffImage;
+  assert.ok(diff, 'a diff image was asked for');
+  assert.ok(diff.width > 0 && diff.height > 0);
+  // Four bytes per pixel, one row after another.
+  assert.equal(diff.data.length, diff.width * diff.height * 4);
+});
+
+test('the diff color can be overridden', async () => {
+  const result = await compare(fixture('blocks', 'base'), fixture('blocks', 'head'), {
+    diff: { color: [0, 255, 0] },
+  });
+  const { data } = result.diffImage;
+  // At least one pixel carries the requested green, opaque.
+  let painted = false;
+  for (let i = 0; i < data.length; i += 4) {
+    if (data[i] === 0 && data[i + 1] === 255 && data[i + 2] === 0 && data[i + 3] === 255) {
+      painted = true;
+      break;
+    }
+  }
+  assert.ok(painted, 'the override color appears in the diff image');
+});
+
 test('images of different sizes are not compared', async () => {
   const result = await compare(fixture('blocks', 'base'), fixture('flat', 'base'));
   assert.equal(result.verdict, 'sizeMismatch');

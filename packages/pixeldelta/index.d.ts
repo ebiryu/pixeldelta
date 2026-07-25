@@ -45,6 +45,13 @@ export interface JsCompareOptions {
    * `false`.
    */
   layoutShift?: boolean
+  /**
+   * Style of the diff image to render, or omitted to render none.
+   *
+   * Passing `{}` renders it with the default style; `alpha` and `color`
+   * override the parts given.
+   */
+  diff?: JsDiffStyle
 }
 
 /** Result of a comparison. */
@@ -62,6 +69,27 @@ export interface JsCompareResult {
    * `layoutShift` was set.
    */
   clusters: Array<JsCluster>
+  /** The rendered diff image, or `null` unless `diff` was set. */
+  diffImage?: JsDiffImage
+}
+
+/** A rendered diff image in RGBA8. */
+export interface JsDiffImage {
+  width: number
+  height: number
+  /** Pixel bytes, `width * height * 4` of them, row by row. */
+  data: Uint8Array
+}
+
+/** Colors and dimming for the diff image. */
+export interface JsDiffStyle {
+  /**
+   * How far unchanged pixels are pulled toward white, in `[0, 1]`. Defaults
+   * to `0.1`.
+   */
+  alpha?: number
+  /** Color painted over differing pixels, as `[r, g, b]`. Defaults to red. */
+  color?: Array<number>
 }
 
 /** An offset in pixels. */

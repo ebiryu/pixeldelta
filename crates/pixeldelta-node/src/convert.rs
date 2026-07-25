@@ -2,9 +2,14 @@
 
 use napi::bindgen_prelude::*;
 
-use pixeldelta_core::{Cluster, CompareOptions, CompareResult, FailFast, Rect, Verdict};
+use pixeldelta_core::{
+    Cluster, CompareOptions, CompareResult, DiffImage, DiffStyle, FailFast, Rect, Verdict,
+};
 
-use crate::{JsCluster, JsCompareOptions, JsCompareResult, JsDisplacement, JsFailFast, JsRect};
+use crate::{
+    JsCluster, JsCompareOptions, JsCompareResult, JsDiffImage, JsDiffStyle, JsDisplacement,
+    JsFailFast, JsRect,
+};
 
 /// Builds engine options from the JS options, filling each unset field with the
 /// engine default.
@@ -22,8 +27,20 @@ pub fn to_options(js: JsCompareOptions) -> Result<CompareOptions> {
         fail_fast: js.fail_fast.map(to_fail_fast),
         cluster: js.cluster.unwrap_or(defaults.cluster),
         layout_shift: js.layout_shift.unwrap_or(defaults.layout_shift),
-        diff: defaults.diff,
+        diff: js.diff.map(to_diff_style),
     })
+}
+
+fn to_diff_style(js: JsDiffStyle) -> DiffStyle {
+    let defaults = DiffStyle::default();
+    DiffStyle {
+        alpha: js.alpha.map(|a| a as f32).unwrap_or(defaults.alpha),
+        diff_color: js
+            .color
+            .and_then(|c| <[u32; 3]>::try_from(c).ok())
+            .map(|[r, g, b]| [r as u8, g as u8, b as u8])
+            .unwrap_or(defaults.diff_color),
+    }
 }
 
 fn to_rect(js: JsRect) -> Rect {
@@ -54,6 +71,15 @@ pub fn to_result(result: CompareResult) -> JsCompareResult {
         diff_ratio: result.diff_ratio,
         stopped_early: result.stopped_early,
         clusters: result.clusters.into_iter().map(to_cluster).collect(),
+        diff_image: result.diff_image.map(to_diff_image),
+    }
+}
+
+fn to_diff_image(diff: DiffImage) -> JsDiffImage {
+    JsDiffImage {
+        width: diff.width,
+        height: diff.height,
+        data: diff.data.into(),
     }
 }
 
