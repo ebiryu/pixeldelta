@@ -6,10 +6,12 @@
 //! serialization dependency; the caller maps its results onto them.
 
 mod json;
+mod junit;
 
 use serde::Serialize;
 
 pub use json::json;
+pub use junit::junit;
 
 /// Which side of the comparison an entry came out on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]

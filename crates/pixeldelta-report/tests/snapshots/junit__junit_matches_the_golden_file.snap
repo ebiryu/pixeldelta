@@ -1,0 +1,21 @@
+---
+source: crates/pixeldelta-report/tests/junit.rs
+assertion_line: 9
+expression: "junit(&sample::sample_report())"
+---
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="pixeldelta" tests="5" failures="4">
+  <testcase name="components/button/primary.png">
+    <failure message="changed: 1284 pixels (2.0100%)"/>
+  </testcase>
+  <testcase name="pages/dashboard.png">
+    <failure message="size mismatch: 1280x864 vs 1280x912"/>
+  </testcase>
+  <testcase name="components/toast.png">
+    <failure message="added: only in actual"/>
+  </testcase>
+  <testcase name="components/banner-legacy.png">
+    <failure message="removed: only in expected"/>
+  </testcase>
+  <testcase name="components/checkbox.png"/>
+</testsuite>
