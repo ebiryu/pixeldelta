@@ -14,6 +14,7 @@ path = "src/main.rs"
 [dependencies]
 pixeldelta-core = { path = "../pixeldelta-core" }
 pixeldelta-io = { path = "../pixeldelta-io" }
+pixeldelta-report = { path = "../pixeldelta-report" }
 # Parses subcommands, positional arguments and flags, and generates --help.
 # Writing that by hand is hundreds of lines unrelated to comparison.
 clap = { version = "=4.5.35", features = ["derive"] }

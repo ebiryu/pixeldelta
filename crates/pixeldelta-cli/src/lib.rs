@@ -3,10 +3,14 @@
 //! Argument parsing lives in the binary; this library holds the work each
 //! subcommand does, so the operations can be tested without spawning a process.
 
+mod run;
+
 use std::path::Path;
 
 use pixeldelta_core::{compare, CompareOptions, CompareResult, Image, Verdict};
 use pixeldelta_io::{decode_file, encode_png, DecodeError, EncodeError};
+
+pub use run::{run_dirs, write_report};
 
 /// Summary of a `compare` run.
 #[derive(Debug, Clone, Copy, PartialEq)]
