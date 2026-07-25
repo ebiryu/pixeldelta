@@ -5,11 +5,13 @@
 //! CI. The types are the crate's own, so the comparison engine stays free of a
 //! serialization dependency; the caller maps its results onto them.
 
+mod html;
 mod json;
 mod junit;
 
 use serde::Serialize;
 
+pub use html::html;
 pub use json::json;
 pub use junit::junit;
 
@@ -73,6 +75,12 @@ pub struct Entry {
     pub expected_size: Option<[u32; 2]>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub actual_size: Option<[u32; 2]>,
+    /// `[width, height]` of the compared images, when they share a size.
+    ///
+    /// Used by the HTML to place cluster rectangles over the diff image. Not
+    /// serialized: JSON and JUnit report cluster bounds as numbers.
+    #[serde(skip)]
+    pub image_size: Option<[u32; 2]>,
     #[serde(skip)]
     pub images: Images,
 }

@@ -33,6 +33,7 @@ pub fn sample_report() -> Report {
                         ssim: Some(0.412),
                     },
                 ],
+                image_size: Some([320, 200]),
                 expected_size: None,
                 actual_size: None,
                 images: Images {
@@ -49,6 +50,7 @@ pub fn sample_report() -> Report {
                 clusters: vec![],
                 expected_size: Some([1280, 864]),
                 actual_size: Some([1280, 912]),
+                image_size: None,
                 images: Images {
                     expected: Some(b"EXPECTED-PNG".to_vec()),
                     actual: Some(b"ACTUAL-PNG".to_vec()),
@@ -63,6 +65,7 @@ pub fn sample_report() -> Report {
                 clusters: vec![],
                 expected_size: None,
                 actual_size: None,
+                image_size: None,
                 images: Images {
                     expected: None,
                     actual: Some(b"ACTUAL-PNG".to_vec()),
@@ -77,6 +80,7 @@ pub fn sample_report() -> Report {
                 clusters: vec![],
                 expected_size: None,
                 actual_size: None,
+                image_size: None,
                 images: Images {
                     expected: Some(b"EXPECTED-PNG".to_vec()),
                     actual: None,
@@ -91,6 +95,7 @@ pub fn sample_report() -> Report {
                 clusters: vec![],
                 expected_size: None,
                 actual_size: None,
+                image_size: None,
                 images: Images {
                     expected: Some(b"EXPECTED-PNG".to_vec()),
                     actual: None,
