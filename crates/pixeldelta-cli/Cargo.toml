@@ -1,0 +1,25 @@
+[package]
+name = "pixeldelta-cli"
+description = "Command-line image comparison for pixeldelta"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "pixeldelta"
+path = "src/main.rs"
+
+[dependencies]
+pixeldelta-core = { path = "../pixeldelta-core" }
+pixeldelta-io = { path = "../pixeldelta-io" }
+# Parses subcommands, positional arguments and flags, and generates --help.
+# Writing that by hand is hundreds of lines unrelated to comparison.
+clap = { version = "=4.5.35", features = ["derive"] }
+# Derives Display and Error for CliError, which main turns into an exit code.
+thiserror = "2.0"
+
+[dev-dependencies]
+# Gives the tests a temporary directory to write fixture PNGs into.
+tempfile = "3"
