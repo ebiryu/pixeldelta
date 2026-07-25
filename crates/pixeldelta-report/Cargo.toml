@@ -1,0 +1,18 @@
+[package]
+name = "pixeldelta-report"
+description = "HTML, JSON and JUnit reports for pixeldelta"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+# Serializes the JSON report. Writing JSON by hand means escaping strings and
+# numbers, which serde_json already does correctly.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+# Compares the generated HTML, JSON and JUnit against reviewed golden files.
+insta = "1"

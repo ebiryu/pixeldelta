@@ -2,6 +2,7 @@
 members = [
     "crates/pixeldelta-core",
     "crates/pixeldelta-io",
+    "crates/pixeldelta-report",
     "crates/pixeldelta-cli",
     "crates/pixeldelta-node",
 ]

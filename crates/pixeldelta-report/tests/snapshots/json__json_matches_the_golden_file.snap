@@ -1,0 +1,84 @@
+---
+source: crates/pixeldelta-report/tests/json.rs
+assertion_line: 9
+expression: "json(&sample::sample_report())"
+---
+{
+  "threshold": 0.1,
+  "antialiasing": true,
+  "layoutShift": true,
+  "summary": {
+    "matched": 1,
+    "changed": 1,
+    "sizeMismatch": 1,
+    "added": 1,
+    "removed": 1,
+    "passed": false
+  },
+  "entries": [
+    {
+      "path": "components/button/primary.png",
+      "category": "changed",
+      "diffPixels": 1284,
+      "diffRatio": 0.0201,
+      "clusters": [
+        {
+          "x": 14,
+          "y": 138,
+          "width": 96,
+          "height": 34,
+          "diffPixels": 612,
+          "displacement": [
+            0,
+            4
+          ],
+          "ssim": 0.981
+        },
+        {
+          "x": 18,
+          "y": 40,
+          "width": 132,
+          "height": 16,
+          "diffPixels": 672,
+          "ssim": 0.412
+        }
+      ]
+    },
+    {
+      "path": "pages/dashboard.png",
+      "category": "sizeMismatch",
+      "diffPixels": 0,
+      "diffRatio": 0.0,
+      "clusters": [],
+      "expectedSize": [
+        1280,
+        864
+      ],
+      "actualSize": [
+        1280,
+        912
+      ]
+    },
+    {
+      "path": "components/toast.png",
+      "category": "added",
+      "diffPixels": 0,
+      "diffRatio": 0.0,
+      "clusters": []
+    },
+    {
+      "path": "components/banner-legacy.png",
+      "category": "removed",
+      "diffPixels": 0,
+      "diffRatio": 0.0,
+      "clusters": []
+    },
+    {
+      "path": "components/checkbox.png",
+      "category": "matched",
+      "diffPixels": 0,
+      "diffRatio": 0.0,
+      "clusters": []
+    }
+  ]
+}
