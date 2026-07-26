@@ -119,6 +119,35 @@ fn without_a_report_flag_nothing_is_written() {
     assert!(!storage_root(dir.path()).join(&head).join("report").exists());
 }
 
+/// The job summary file a workflow points at may already hold output from an
+/// earlier step, so the body is appended.
+#[test]
+fn the_notification_body_is_appended_to_the_markdown_file() {
+    let dir = tempfile::tempdir().expect("a temporary directory");
+    let repo = dir.path().join("repo");
+    init(&repo);
+    let actual = dir.path().join("actual");
+    write_png(&actual.join("a.png"), 8, 8, [0, 128, 0, 255]);
+    let storage = storage(dir.path());
+
+    let first = commit(&repo, "first");
+    ci(&options(&repo, &actual, &storage)).expect("the first run finishes");
+
+    write_png(&actual.join("a.png"), 8, 8, [255, 0, 0, 255]);
+    commit(&repo, "second");
+    let markdown = dir.path().join("summary.md");
+    std::fs::write(&markdown, "written by an earlier step\n").expect("the file is written");
+    let mut opts = options(&repo, &actual, &storage);
+    opts.markdown = Some(&markdown);
+    ci(&opts).expect("the run finishes");
+
+    let body = std::fs::read_to_string(&markdown).expect("the file is readable");
+    assert!(body.starts_with("written by an earlier step\n"), "{body}");
+    assert!(body.contains("<!-- pixeldelta -->"), "{body}");
+    assert!(body.contains(&first[..8]), "the baseline is named: {body}");
+    assert!(body.contains("| changed | 1 |"), "{body}");
+}
+
 fn options<'a>(repo: &'a Path, actual: &'a Path, storage: &'a Storage) -> CiOptions<'a> {
     CiOptions {
         repo,
@@ -131,6 +160,7 @@ fn options<'a>(repo: &'a Path, actual: &'a Path, storage: &'a Storage) -> CiOpti
         report: None,
         json: None,
         junit: None,
+        markdown: None,
     }
 }
 

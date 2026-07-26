@@ -92,6 +92,9 @@ struct CiArgs {
     /// Write the JUnit XML report to this path.
     #[arg(long)]
     junit: Option<PathBuf>,
+    /// Append the notification body to this path, such as $GITHUB_STEP_SUMMARY.
+    #[arg(long)]
+    markdown: Option<PathBuf>,
     /// Color delta a pixel must exceed to count, as a fraction in [0, 1].
     #[arg(long, default_value_t = 0.1)]
     threshold: f32,
@@ -128,6 +131,7 @@ fn run_ci(args: CiArgs) -> ExitCode {
         report: args.report.as_deref(),
         json: args.json.as_deref(),
         junit: args.junit.as_deref(),
+        markdown: args.markdown.as_deref(),
     };
 
     let run = match ci(&opts) {

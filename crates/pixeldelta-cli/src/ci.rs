@@ -31,6 +31,10 @@ pub struct CiOptions<'a> {
     pub json: Option<&'a Path>,
     /// Write the JUnit XML report to this path.
     pub junit: Option<&'a Path>,
+    /// Append the notification body to this path, which a workflow points at
+    /// its job summary file. Nothing is appended when there was no baseline,
+    /// since no comparison happened.
+    pub markdown: Option<&'a Path>,
 }
 
 /// What one `ci` run produced.
@@ -90,6 +94,10 @@ pub fn ci(opts: &CiOptions) -> Result<CiRun, CliError> {
         None => None,
     };
 
+    if let Some(path) = opts.markdown {
+        append(path, &pixeldelta_report::markdown(&report, &baseline))?;
+    }
+
     opts.storage.store(&resolved.head, opts.actual)?;
 
     Ok(CiRun {
@@ -98,4 +106,26 @@ pub fn ci(opts: &CiOptions) -> Result<CiRun, CliError> {
         summary: Some(report.summary()),
         report_url,
     })
+}
+
+/// Appends the body to a file, creating it when it is not there.
+///
+/// The job summary file a workflow points at may already hold output from an
+/// earlier step.
+fn append(path: &Path, body: &str) -> Result<(), CliError> {
+    use std::io::Write;
+
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .map_err(|source| CliError::Write {
+            path: path.to_path_buf(),
+            source,
+        })?;
+    file.write_all(body.as_bytes())
+        .map_err(|source| CliError::Write {
+            path: path.to_path_buf(),
+            source,
+        })
 }
