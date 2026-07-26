@@ -73,28 +73,49 @@ jobs:
       fail-fast: false
       matrix:
         settings:
+          # `cli` names the platform package the executable belongs to, and
+          # `cliTarget` what cargo builds it for. An entry without them ships
+          # the addon alone.
           - host: macos-latest
             target: aarch64-apple-darwin
             build: pnpm build --target aarch64-apple-darwin
+            cli: darwin-arm64
+            cliTarget: aarch64-apple-darwin
           - host: macos-latest
             target: x86_64-apple-darwin
             build: pnpm build --target x86_64-apple-darwin
+            cli: darwin-x64
+            cliTarget: x86_64-apple-darwin
           - host: windows-latest
             target: x86_64-pc-windows-msvc
             build: pnpm build --target x86_64-pc-windows-msvc
+            cli: win32-x64-msvc
+            cliTarget: x86_64-pc-windows-msvc
           # glibc targets cross-compile against the napi-rs toolchain (glibc
           # 2.17), which keeps the binaries loadable on older distributions.
+          # cargo has no equivalent, so the executable pins the same glibc
+          # through cargo-zigbuild's versioned target.
           - host: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             build: pnpm build --target x86_64-unknown-linux-gnu --use-napi-cross
+            zig: true
+            cli: linux-x64-gnu
+            cliTarget: x86_64-unknown-linux-gnu.2.17
           - host: ubuntu-latest
             target: aarch64-unknown-linux-gnu
             build: pnpm build --target aarch64-unknown-linux-gnu --use-napi-cross
+            zig: true
+            cli: linux-arm64-gnu
+            cliTarget: aarch64-unknown-linux-gnu.2.17
           # musl cross-compiles with cargo-zigbuild, which needs Zig on PATH.
           - host: ubuntu-latest
             target: x86_64-unknown-linux-musl
             zig: true
             build: pnpm build --target x86_64-unknown-linux-musl -x
+            cli: linux-x64-musl
+            cliTarget: x86_64-unknown-linux-musl
+          # The executable is left out here: it runs git and opens TLS
+          # connections, and wasm32-wasip1 has no sockets.
           - host: ubuntu-latest
             target: wasm32-wasip1-threads
             build: pnpm build --target wasm32-wasip1-threads
@@ -123,13 +144,37 @@ jobs:
         run: ${{ matrix.settings.build }}
         working-directory: packages/pixeldelta
         shell: bash
-      - name: Upload the binary
+      # Named after the platform package it belongs to, so the release job can
+      # gather every target into one directory and sort them out by name.
+      - name: Build the executable
+        if: ${{ matrix.settings.cli }}
+        shell: bash
+        run: |
+          set -eu
+          manifest=crates/pixeldelta-cli/Cargo.toml
+          if [ -n "${{ matrix.settings.zig }}" ]; then
+            cargo install --locked cargo-zigbuild
+            cargo zigbuild --release --manifest-path "$manifest" \
+              --target ${{ matrix.settings.cliTarget }}
+          else
+            cargo build --release --manifest-path "$manifest" \
+              --target ${{ matrix.settings.cliTarget }}
+          fi
+          # A versioned target such as x86_64-unknown-linux-gnu.2.17 still
+          # builds into the directory named after the plain triple.
+          triple=$(echo "${{ matrix.settings.cliTarget }}" | sed -E 's/\.[0-9.]+$//')
+          ext=""
+          case "${{ matrix.settings.cli }}" in win32-*) ext=".exe" ;; esac
+          cp "target/$triple/release/pixeldelta$ext" \
+            "packages/pixeldelta/pixeldelta-cli.${{ matrix.settings.cli }}$ext"
+      - name: Upload the binaries
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: bindings-${{ matrix.settings.target }}
           path: |
             packages/pixeldelta/pixeldelta.*.node
             packages/pixeldelta/pixeldelta.*.wasm
+            packages/pixeldelta/pixeldelta-cli.*
           if-no-files-found: error
 
   # Runs the Node tests against the freshly built native binary, on the hosts a
@@ -161,6 +206,11 @@ jobs:
         with:
           name: bindings-${{ matrix.settings.target }}
           path: packages/pixeldelta
+      # An artifact is a zip, which carries no file modes, so this also puts
+      # the executable bit back.
+      - name: Place the executable in its platform package
+        run: node scripts/place-cli.mjs --artifacts .
+        working-directory: packages/pixeldelta
       - run: pnpm --filter pixeldelta test
 
   publish:
@@ -187,6 +237,12 @@ jobs:
           merge-multiple: true
       - name: Move each binary into its platform package
         run: pnpm --filter pixeldelta exec napi artifacts --output-dir ./artifacts
+        working-directory: packages/pixeldelta
+      # napi artifacts only moves .node and .wasm, so the executable is placed
+      # separately. This also sets the executable bit, which the artifact zip
+      # did not carry.
+      - name: Move each executable into its platform package
+        run: node scripts/place-cli.mjs --artifacts ./artifacts
         working-directory: packages/pixeldelta
       # A tagged release publishes over OIDC: no token, and npm attaches
       # provenance on its own. The bootstrap dispatch instead authenticates with

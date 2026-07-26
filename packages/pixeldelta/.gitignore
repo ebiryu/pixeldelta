@@ -11,3 +11,10 @@ node_modules/
 
 # Binaries gathered from the build jobs during a release.
 artifacts/
+
+# The command-line executable, built for one target at a time. `pnpm run
+# build:cli` places the host build into its platform package; the build jobs
+# leave the cross builds beside this file under their target's name.
+npm/*/pixeldelta
+npm/*/pixeldelta.exe
+pixeldelta-cli.*

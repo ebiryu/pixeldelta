@@ -31,9 +31,14 @@ test:
 
 # Build the Node addon and run its tests against Node. The crate lives in
 # crates/pixeldelta-node; the npm package that wraps it is packages/pixeldelta.
+#
+# The command-line executable is built too, and placed into the host's platform
+# package: the tests cover the launcher that a consumer's `pnpm run` reaches,
+# and it runs the executable rather than standing in for it.
 node:
     pnpm install
     pnpm --filter pixeldelta run build
+    pnpm --filter pixeldelta run build:cli
     pnpm --filter pixeldelta test
 
 # Pack the package and load it from an empty project, to check the published

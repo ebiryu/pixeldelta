@@ -6,7 +6,8 @@
   ],
   "main": "pixeldelta.darwin-arm64.node",
   "files": [
-    "pixeldelta.darwin-arm64.node"
+    "pixeldelta.darwin-arm64.node",
+    "pixeldelta"
   ],
   "description": "Fast image comparison engine with difference clustering",
   "license": "MIT",

@@ -6,7 +6,8 @@
   ],
   "main": "pixeldelta.win32-x64-msvc.node",
   "files": [
-    "pixeldelta.win32-x64-msvc.node"
+    "pixeldelta.win32-x64-msvc.node",
+    "pixeldelta.exe"
   ],
   "description": "Fast image comparison engine with difference clustering",
   "license": "MIT",

@@ -10,9 +10,13 @@
   },
   "main": "index.js",
   "types": "index.d.ts",
+  "bin": {
+    "pixeldelta": "cli.js"
+  },
   "files": [
     "index.js",
-    "index.d.ts"
+    "index.d.ts",
+    "cli.js"
   ],
   "napi": {
     "binaryName": "pixeldelta",
@@ -36,6 +40,7 @@
   "scripts": {
     "build": "napi build --platform --release --manifest-path ../../crates/pixeldelta-node/Cargo.toml --output-dir .",
     "build:debug": "napi build --platform --manifest-path ../../crates/pixeldelta-node/Cargo.toml --output-dir .",
+    "build:cli": "cargo build --release --manifest-path ../../crates/pixeldelta-cli/Cargo.toml && node scripts/place-cli.mjs",
     "artifacts": "napi artifacts",
     "test": "node --test \"test/*.test.mjs\"",
     "version": "napi version"

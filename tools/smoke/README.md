@@ -10,17 +10,28 @@ empty project runs `npm i` and the package works.
 just smoke
 ```
 
-`run.sh` builds the addon for the host, packs the root package
-(`packages/pixeldelta`) and the host's platform package (`npm/<host>`) into
-tarballs as they would be published, extracts them into a flat `node_modules`
-the way npm installs them, and runs `smoke.test.mjs`, which loads the package
-by name and compares a fixture pair.
+`run.sh` builds the addon and the command-line executable for the host, packs
+the root package (`packages/pixeldelta`) and the host's platform package
+(`npm/<host>`) into tarballs as they would be published, and checks both halves
+of what the package offers.
 
-It lays the tarballs out by hand rather than through a package manager, so the
-check needs no network and no registry. It exercises the tarball contents and
-the runtime resolution in `index.js` (root package to platform package to
-binary), which fail the same way on every platform. It does not exercise npm's
-own `os`/`cpu` selection of the platform package.
+1. `smoke.test.mjs` loads the package by name and compares a fixture pair. The
+   tarballs are extracted into a flat `node_modules` by hand, as npm lays them
+   out, so this stage needs no package manager at all. It exercises the tarball
+   contents and the runtime resolution in `index.js` (root package to platform
+   package to binary).
+2. `cli.test.mjs` runs the executable through `pnpm run`, so the `bin` link
+   under test is the one an install created. It checks that a package script
+   reaches the launcher, that the exit code of a comparison survives, and that
+   the executable arrived runnable.
+
+Both stages read local tarballs, so neither needs a network or a registry.
+
+The tarballs are packed with `npm`, matching what a release runs. The client is
+not interchangeable: `pnpm pack` writes every file as `0644`, which would leave
+the executable unrunnable after install.
+
+It does not exercise npm's own `os`/`cpu` selection of the platform package.
 
 Only the host platform is covered locally. The other targets are built by the
 matrix in `.github/workflows/ci.yml`.
@@ -37,6 +48,7 @@ npm init -y
 npm install pixeldelta
 node -e "const {compareSync} = require('pixeldelta'); \
   console.log(compareSync(process.argv[1], process.argv[1]).verdict)" some.png
+npx pixeldelta --version
 ```
 
 A working install pulls exactly one `pixeldelta-<platform>` package for the

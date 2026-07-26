@@ -52,3 +52,38 @@ thread.
 
 When `failFast` stops the scan, `stoppedEarly` is `true` and `diffPixels` is a
 lower bound.
+
+## Command line
+
+The package installs a `pixeldelta` command, so a script in `package.json`
+reaches it without a global install:
+
+```json
+{
+  "scripts": {
+    "visual-diff": "pixeldelta run ./expected ./actual --report ./report"
+  }
+}
+```
+
+```sh
+npm run visual-diff
+pnpm run visual-diff
+npx pixeldelta compare base.png head.png --output diff.png
+```
+
+`compare` takes two images; `run` takes two directories and writes an HTML,
+JSON or JUnit report. The exit code carries the verdict, so a CI step fails on
+a difference without reading the output.
+
+| Code | `compare` | `run` |
+| --- | --- | --- |
+| `0` | the images match | every file matched |
+| `1` | the images differ | a file differed, was added, was removed, or changed size |
+| `2` | the sizes differ | not used |
+| `3` | a file could not be read | a file could not be read |
+
+The command comes with the platform-specific prebuild. The WebAssembly fallback
+does not carry it, because it runs `git` and opens network connections and WASI
+has no sockets. On a platform with no prebuild the library still works through
+that fallback, and the command reports which platforms ship it.

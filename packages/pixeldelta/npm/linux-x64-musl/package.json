@@ -6,7 +6,8 @@
   ],
   "main": "pixeldelta.linux-x64-musl.node",
   "files": [
-    "pixeldelta.linux-x64-musl.node"
+    "pixeldelta.linux-x64-musl.node",
+    "pixeldelta"
   ],
   "description": "Fast image comparison engine with difference clustering",
   "license": "MIT",
