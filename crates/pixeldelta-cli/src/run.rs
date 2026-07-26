@@ -176,6 +176,18 @@ fn to_cluster(c: &pixeldelta_core::Cluster) -> Cluster {
     }
 }
 
+/// Writes the HTML report into `dir` as index.html.
+///
+/// Returns what it wrote, so a caller that also stores the report does not
+/// render it twice.
+pub(crate) fn write_html(report: &Report, dir: &Path) -> Result<String, CliError> {
+    std::fs::create_dir_all(dir).map_err(|source| write_error(dir, source))?;
+    let html = pixeldelta_report::html(report);
+    let index = dir.join("index.html");
+    std::fs::write(&index, &html).map_err(|source| write_error(&index, source))?;
+    Ok(html)
+}
+
 /// Writes each output that was requested.
 pub fn write_report(
     report: &Report,
@@ -184,10 +196,7 @@ pub fn write_report(
     junit_path: Option<&Path>,
 ) -> Result<(), CliError> {
     if let Some(dir) = report_dir {
-        std::fs::create_dir_all(dir).map_err(|source| write_error(dir, source))?;
-        let index = dir.join("index.html");
-        std::fs::write(&index, pixeldelta_report::html(report))
-            .map_err(|source| write_error(&index, source))?;
+        write_html(report, dir)?;
     }
     if let Some(path) = json_path {
         std::fs::write(path, pixeldelta_report::json(report))

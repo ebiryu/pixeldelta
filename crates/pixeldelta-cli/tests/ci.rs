@@ -1,0 +1,182 @@
+//! The `ci` operation: resolve, fetch, compare, store.
+
+use std::path::Path;
+use std::process::Command;
+
+use pixeldelta_cli::{ci, CiOptions, Storage};
+
+#[test]
+fn the_first_run_stores_a_snapshot_and_has_nothing_to_compare() {
+    let dir = tempfile::tempdir().expect("a temporary directory");
+    let repo = dir.path().join("repo");
+    init(&repo);
+    let head = commit(&repo, "first");
+    let actual = dir.path().join("actual");
+    write_png(&actual.join("a.png"), 8, 8, [0, 128, 0, 255]);
+    let storage = storage(dir.path());
+
+    let run = ci(&options(&repo, &actual, &storage)).expect("the run finishes");
+
+    assert_eq!(run.head, head);
+    assert_eq!(run.baseline, None);
+    assert!(run.summary.is_none(), "there was nothing to compare");
+    assert!(
+        storage.exists(&head).expect("the check succeeds"),
+        "the snapshot is stored for the next run"
+    );
+}
+
+#[test]
+fn an_unchanged_screenshot_passes_against_the_stored_baseline() {
+    let dir = tempfile::tempdir().expect("a temporary directory");
+    let repo = dir.path().join("repo");
+    init(&repo);
+    let actual = dir.path().join("actual");
+    write_png(&actual.join("a.png"), 8, 8, [0, 128, 0, 255]);
+    let storage = storage(dir.path());
+
+    commit(&repo, "first");
+    ci(&options(&repo, &actual, &storage)).expect("the first run finishes");
+    let head = commit(&repo, "second");
+    let run = ci(&options(&repo, &actual, &storage)).expect("the second run finishes");
+
+    assert_eq!(run.head, head);
+    assert!(run.baseline.is_some());
+    let summary = run.summary.expect("the run compared against a baseline");
+    assert!(summary.passed);
+    assert_eq!(summary.matched, 1);
+}
+
+#[test]
+fn a_changed_screenshot_fails_against_the_stored_baseline() {
+    let dir = tempfile::tempdir().expect("a temporary directory");
+    let repo = dir.path().join("repo");
+    init(&repo);
+    let actual = dir.path().join("actual");
+    write_png(&actual.join("a.png"), 8, 8, [0, 128, 0, 255]);
+    let storage = storage(dir.path());
+
+    let first = commit(&repo, "first");
+    ci(&options(&repo, &actual, &storage)).expect("the first run finishes");
+
+    write_png(&actual.join("a.png"), 8, 8, [255, 0, 0, 255]);
+    write_png(&actual.join("new.png"), 4, 4, [0, 0, 255, 255]);
+    commit(&repo, "second");
+    let run = ci(&options(&repo, &actual, &storage)).expect("the second run finishes");
+
+    assert_eq!(run.baseline, Some(first));
+    let summary = run.summary.expect("the run compared against a baseline");
+    assert!(!summary.passed);
+    assert_eq!(summary.changed, 1);
+    assert_eq!(summary.added, 1);
+}
+
+#[test]
+fn the_report_is_written_and_stored_when_it_is_asked_for() {
+    let dir = tempfile::tempdir().expect("a temporary directory");
+    let repo = dir.path().join("repo");
+    init(&repo);
+    let actual = dir.path().join("actual");
+    write_png(&actual.join("a.png"), 8, 8, [0, 128, 0, 255]);
+    let storage = storage(dir.path());
+
+    commit(&repo, "first");
+    ci(&options(&repo, &actual, &storage)).expect("the first run finishes");
+
+    write_png(&actual.join("a.png"), 8, 8, [255, 0, 0, 255]);
+    let head = commit(&repo, "second");
+    let report_dir = dir.path().join("report");
+    let json = dir.path().join("result.json");
+    let mut opts = options(&repo, &actual, &storage);
+    opts.report = Some(&report_dir);
+    opts.json = Some(&json);
+    let run = ci(&opts).expect("the run finishes");
+
+    assert!(report_dir.join("index.html").is_file());
+    assert!(json.is_file());
+    assert_eq!(run.report_url, None, "a local directory has no public URL");
+    assert!(
+        storage_root(dir.path())
+            .join(&head)
+            .join("report/index.html")
+            .is_file(),
+        "the report is kept with the snapshot"
+    );
+}
+
+#[test]
+fn without_a_report_flag_nothing_is_written() {
+    let dir = tempfile::tempdir().expect("a temporary directory");
+    let repo = dir.path().join("repo");
+    init(&repo);
+    let actual = dir.path().join("actual");
+    write_png(&actual.join("a.png"), 8, 8, [0, 128, 0, 255]);
+    let storage = storage(dir.path());
+
+    let head = commit(&repo, "first");
+    ci(&options(&repo, &actual, &storage)).expect("the run finishes");
+
+    assert!(!storage_root(dir.path()).join(&head).join("report").exists());
+}
+
+fn options<'a>(repo: &'a Path, actual: &'a Path, storage: &'a Storage) -> CiOptions<'a> {
+    CiOptions {
+        repo,
+        actual,
+        storage,
+        base_branch: "main",
+        history_limit: 50,
+        threshold: 0.1,
+        antialiasing: true,
+        report: None,
+        json: None,
+        junit: None,
+    }
+}
+
+fn storage_root(root: &Path) -> std::path::PathBuf {
+    root.join("store")
+}
+
+fn storage(root: &Path) -> Storage {
+    Storage::parse(storage_root(root).to_str().expect("a UTF-8 path")).expect("a directory spec")
+}
+
+fn write_png(path: &Path, width: u32, height: u32, color: [u8; 4]) {
+    std::fs::create_dir_all(path.parent().expect("the path has a parent"))
+        .expect("the directory is created");
+    let pixels: Vec<u8> = color
+        .iter()
+        .copied()
+        .cycle()
+        .take((width * height * 4) as usize)
+        .collect();
+    let png = pixeldelta_io::encode_png(width, height, &pixels).expect("the image encodes");
+    std::fs::write(path, png).expect("the file is written");
+}
+
+fn init(repo: &Path) {
+    std::fs::create_dir_all(repo).expect("the repository directory is created");
+    git(repo, &["-c", "init.defaultBranch=main", "init", "-q"]);
+    git(repo, &["config", "user.name", "pixeldelta test"]);
+    git(repo, &["config", "user.email", "test@example.invalid"]);
+}
+
+fn commit(repo: &Path, message: &str) -> String {
+    git(repo, &["commit", "-q", "--allow-empty", "-m", message]);
+    git(repo, &["rev-parse", "HEAD"])
+}
+
+fn git(repo: &Path, args: &[&str]) -> String {
+    let output = Command::new("git")
+        .current_dir(repo)
+        .args(args)
+        .output()
+        .expect("git runs");
+    assert!(
+        output.status.success(),
+        "git {args:?} failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8_lossy(&output.stdout).trim().to_owned()
+}

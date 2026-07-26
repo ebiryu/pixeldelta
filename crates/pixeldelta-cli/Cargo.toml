@@ -25,7 +25,6 @@ thiserror = "2.0"
 # serde_json already has, and the report crate already pulls it into the build.
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-
-[dev-dependencies]
-# Gives the tests a temporary directory to write fixture PNGs into.
+# Holds the baseline snapshot the `ci` subcommand fetches, which is discarded
+# once the comparison is done.
 tempfile = "3"

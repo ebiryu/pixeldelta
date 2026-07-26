@@ -4,6 +4,7 @@
 //! subcommand does, so the operations can be tested without spawning a process.
 
 mod baseline;
+mod ci;
 mod paths;
 mod run;
 mod storage;
@@ -14,6 +15,7 @@ use pixeldelta_core::{compare, CompareOptions, CompareResult, Image, Verdict};
 use pixeldelta_io::{decode_file, encode_png, DecodeError, EncodeError};
 
 pub use baseline::{resolve_baseline, Baseline, BaselineError};
+pub use ci::{ci, CiOptions, CiRun};
 pub use run::{run_dirs, write_report};
 pub use storage::{Storage, StorageError};
 
@@ -43,6 +45,15 @@ pub enum CliError {
         path: std::path::PathBuf,
         source: std::io::Error,
     },
+    /// The directory a baseline snapshot is fetched into could not be created.
+    #[error("a temporary directory could not be created: {source}")]
+    Temp { source: std::io::Error },
+    /// The baseline commit could not be resolved.
+    #[error(transparent)]
+    Baseline(#[from] BaselineError),
+    /// A snapshot could not be read or written.
+    #[error(transparent)]
+    Storage(#[from] StorageError),
 }
 
 impl CliError {
