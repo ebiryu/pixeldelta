@@ -6,6 +6,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+publish.workspace = true
 
 [lib]
 # napi loads the addon as a C dynamic library, which Node opens as a `.node`.

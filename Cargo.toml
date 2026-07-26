@@ -9,11 +9,15 @@ members = [
 resolver = "2"
 
 [workspace.package]
+# The npm package is what gets released; `just release` writes this to match
+# `packages/pixeldelta/package.json`, which `pixeldelta --version` then reports.
 version = "0.0.0"
 edition = "2021"
 rust-version = "1.88"
 license = "MIT"
 repository = "https://github.com/ebiryu/pixeldelta"
+# The crates are distributed through npm, not crates.io.
+publish = false
 
 [profile.bench]
 debug = true
