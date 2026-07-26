@@ -7,7 +7,8 @@ use clap::{Args, Parser, Subcommand};
 use pixeldelta_core::{CompareOptions, Verdict};
 
 use pixeldelta_cli::{
-    ci, compare_files, exit_code, run_dirs, write_report, CiOptions, CompareRun, Storage,
+    ci, compare_files, exit_code, pull_request_number, run_dirs, write_report, CiOptions,
+    CompareRun, GithubConfig, Notification, Storage,
 };
 
 #[derive(Parser)]
@@ -95,6 +96,14 @@ struct CiArgs {
     /// Append the notification body to this path, such as $GITHUB_STEP_SUMMARY.
     #[arg(long)]
     markdown: Option<PathBuf>,
+    /// Post the notification body as a pull request comment, replacing the one
+    /// an earlier run left. Reads GITHUB_TOKEN, GITHUB_REPOSITORY and
+    /// GITHUB_API_URL from the environment.
+    #[arg(long)]
+    comment: bool,
+    /// Pull request to comment on. Read from the workflow event when omitted.
+    #[arg(long)]
+    pr: Option<u64>,
     /// Color delta a pixel must exceed to count, as a fraction in [0, 1].
     #[arg(long, default_value_t = 0.1)]
     threshold: f32,
@@ -120,6 +129,18 @@ fn run_ci(args: CiArgs) -> ExitCode {
         }
     };
 
+    let github = if args.comment {
+        match github_config(&args) {
+            Ok(config) => Some(config),
+            Err(message) => {
+                eprintln!("error: {message}");
+                return ExitCode::from(3);
+            }
+        }
+    } else {
+        None
+    };
+
     let opts = CiOptions {
         repo: &args.repo,
         actual: &args.actual,
@@ -132,6 +153,7 @@ fn run_ci(args: CiArgs) -> ExitCode {
         json: args.json.as_deref(),
         junit: args.junit.as_deref(),
         markdown: args.markdown.as_deref(),
+        github: github.as_ref(),
     };
 
     let run = match ci(&opts) {
@@ -160,7 +182,44 @@ fn run_ci(args: CiArgs) -> ExitCode {
     if let Some(url) = run.report_url {
         println!("report: {url}");
     }
+    match run.comment {
+        Some(Notification::Posted { url, .. }) => println!("comment: {url}"),
+        Some(Notification::Refused) => {
+            eprintln!("warning: the token may not comment on this repository")
+        }
+        None => {}
+    }
     ExitCode::from(if summary.passed { 0 } else { 1 })
+}
+
+/// Collects what the comment route needs from the flags and the environment.
+fn github_config(args: &CiArgs) -> Result<GithubConfig, String> {
+    let variable = |name: &str| {
+        std::env::var(name)
+            .ok()
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| format!("{name} is not set, and --comment needs it"))
+    };
+
+    let pull_request = match args.pr {
+        Some(number) => number,
+        None => {
+            let event = variable("GITHUB_EVENT_PATH")?;
+            pull_request_number(std::path::Path::new(&event)).ok_or_else(|| {
+                "this run is not on a pull request; pass --pr to name one".to_owned()
+            })?
+        }
+    };
+
+    Ok(GithubConfig {
+        api_url: std::env::var("GITHUB_API_URL")
+            .ok()
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| "https://api.github.com".to_owned()),
+        repository: variable("GITHUB_REPOSITORY")?,
+        pull_request,
+        token: variable("GITHUB_TOKEN")?,
+    })
 }
 
 fn run(args: RunArgs) -> ExitCode {

@@ -10,7 +10,7 @@ use crate::{Category, Cluster, Entry, Report};
 
 /// Marker the body opens with, so a later run can find the comment it wrote
 /// and replace it rather than adding another.
-const MARKER: &str = "<!-- pixeldelta -->";
+pub const MARKER: &str = "<!-- pixeldelta -->";
 
 /// Rows one category lists before it is cut off.
 ///

@@ -16,7 +16,7 @@ use serde::Serialize;
 pub use html::html;
 pub use json::json;
 pub use junit::junit;
-pub use markdown::markdown;
+pub use markdown::{markdown, MARKER};
 
 /// Which side of the comparison an entry came out on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]

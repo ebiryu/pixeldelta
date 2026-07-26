@@ -5,6 +5,7 @@ use std::path::Path;
 use pixeldelta_report::Summary;
 
 use crate::baseline::resolve_baseline;
+use crate::github::{notify, GithubConfig, Notification};
 use crate::run::{run_dirs, write_html, write_report};
 use crate::storage::Storage;
 use crate::CliError;
@@ -35,6 +36,9 @@ pub struct CiOptions<'a> {
     /// its job summary file. Nothing is appended when there was no baseline,
     /// since no comparison happened.
     pub markdown: Option<&'a Path>,
+    /// Post the notification body as a pull request comment. Nothing is posted
+    /// when there was no baseline.
+    pub github: Option<&'a GithubConfig>,
 }
 
 /// What one `ci` run produced.
@@ -48,6 +52,8 @@ pub struct CiRun {
     pub summary: Option<Summary>,
     /// Where the stored report can be read, when the storage serves one.
     pub report_url: Option<String>,
+    /// What posting the comment came to, when one was asked for.
+    pub comment: Option<Notification>,
 }
 
 /// Compares `actual` against the snapshot of the baseline commit, then stores
@@ -70,6 +76,7 @@ pub fn ci(opts: &CiOptions) -> Result<CiRun, CliError> {
             baseline: None,
             summary: None,
             report_url: None,
+            comment: None,
         });
     };
 
@@ -94,9 +101,19 @@ pub fn ci(opts: &CiOptions) -> Result<CiRun, CliError> {
         None => None,
     };
 
-    if let Some(path) = opts.markdown {
-        append(path, &pixeldelta_report::markdown(&report, &baseline))?;
+    // Rendered once and used by both routes, so the comment and the job
+    // summary carry the same account of the run.
+    let body = match (opts.markdown, opts.github) {
+        (None, None) => None,
+        _ => Some(pixeldelta_report::markdown(&report, &baseline)),
+    };
+    if let (Some(path), Some(body)) = (opts.markdown, &body) {
+        append(path, body)?;
     }
+    let comment = match (opts.github, &body) {
+        (Some(config), Some(body)) => Some(notify(config, body)?),
+        _ => None,
+    };
 
     opts.storage.store(&resolved.head, opts.actual)?;
 
@@ -105,6 +122,7 @@ pub fn ci(opts: &CiOptions) -> Result<CiRun, CliError> {
         baseline: Some(baseline),
         summary: Some(report.summary()),
         report_url,
+        comment,
     })
 }
 

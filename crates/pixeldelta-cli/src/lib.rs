@@ -5,6 +5,7 @@
 
 mod baseline;
 mod ci;
+mod github;
 mod paths;
 mod run;
 mod s3;
@@ -18,6 +19,7 @@ use pixeldelta_io::{decode_file, encode_png, DecodeError, EncodeError};
 
 pub use baseline::{resolve_baseline, Baseline, BaselineError};
 pub use ci::{ci, CiOptions, CiRun};
+pub use github::{notify, pull_request_number, GithubConfig, GithubError, Notification};
 pub use run::{run_dirs, write_report};
 pub use sigv4::Credentials;
 pub use storage::{S3Config, Storage, StorageError};
@@ -57,6 +59,9 @@ pub enum CliError {
     /// A snapshot could not be read or written.
     #[error(transparent)]
     Storage(#[from] StorageError),
+    /// The comment could not be posted.
+    #[error(transparent)]
+    Github(#[from] GithubError),
 }
 
 impl CliError {

@@ -1,9 +1,11 @@
 //! The `ci` operation: resolve, fetch, compare, store.
 
+mod stub;
+
 use std::path::Path;
 use std::process::Command;
 
-use pixeldelta_cli::{ci, CiOptions, Storage};
+use pixeldelta_cli::{ci, CiOptions, GithubConfig, Notification, Storage};
 
 #[test]
 fn the_first_run_stores_a_snapshot_and_has_nothing_to_compare() {
@@ -148,6 +150,49 @@ fn the_notification_body_is_appended_to_the_markdown_file() {
     assert!(body.contains("| changed | 1 |"), "{body}");
 }
 
+/// The comment carries the same body as the markdown file, so a reader sees
+/// one account of the run wherever they look.
+#[test]
+fn the_comment_carries_the_notification_body() {
+    let dir = tempfile::tempdir().expect("a temporary directory");
+    let repo = dir.path().join("repo");
+    init(&repo);
+    let actual = dir.path().join("actual");
+    write_png(&actual.join("a.png"), 8, 8, [0, 128, 0, 255]);
+    let storage = storage(dir.path());
+
+    commit(&repo, "first");
+    ci(&options(&repo, &actual, &storage)).expect("the first run finishes");
+
+    write_png(&actual.join("a.png"), 8, 8, [255, 0, 0, 255]);
+    commit(&repo, "second");
+    let stub = stub::Stub::start(vec![
+        stub::Reply::ok(b"[]"),
+        stub::Reply::ok(br#"{"id":1,"html_url":"https://example.invalid/1"}"#),
+    ]);
+    let github = GithubConfig {
+        api_url: stub.url(),
+        repository: "acme/site".into(),
+        pull_request: 3,
+        token: "ghs_token".into(),
+    };
+    let mut opts = options(&repo, &actual, &storage);
+    opts.github = Some(&github);
+    let run = ci(&opts).expect("the run finishes");
+
+    assert_eq!(
+        run.comment,
+        Some(Notification::Posted {
+            url: "https://example.invalid/1".to_owned(),
+            updated: false,
+        })
+    );
+    let posted = stub.requests().remove(1);
+    let body = String::from_utf8_lossy(&posted.body).into_owned();
+    assert!(body.contains("<!-- pixeldelta -->"), "{body}");
+    assert!(body.contains("changed"), "{body}");
+}
+
 fn options<'a>(repo: &'a Path, actual: &'a Path, storage: &'a Storage) -> CiOptions<'a> {
     CiOptions {
         repo,
@@ -161,6 +206,7 @@ fn options<'a>(repo: &'a Path, actual: &'a Path, storage: &'a Storage) -> CiOpti
         json: None,
         junit: None,
         markdown: None,
+        github: None,
     }
 }
 
