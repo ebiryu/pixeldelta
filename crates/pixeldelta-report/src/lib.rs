@@ -1,19 +1,22 @@
 //! Reports for a directory comparison.
 //!
 //! Takes the outcome of comparing two directories and renders it three ways: a
-//! self-contained HTML page for people, JSON for other tools, and JUnit XML for
-//! CI. The types are the crate's own, so the comparison engine stays free of a
-//! serialization dependency; the caller maps its results onto them.
+//! self-contained HTML page for people, JSON for other tools, JUnit XML for CI,
+//! and Markdown for a notification. The types are the crate's own, so the
+//! comparison engine stays free of a serialization dependency; the caller maps
+//! its results onto them.
 
 mod html;
 mod json;
 mod junit;
+mod markdown;
 
 use serde::Serialize;
 
 pub use html::html;
 pub use json::json;
 pub use junit::junit;
+pub use markdown::markdown;
 
 /// Which side of the comparison an entry came out on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]

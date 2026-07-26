@@ -1,0 +1,34 @@
+---
+source: crates/pixeldelta-report/tests/markdown.rs
+expression: "markdown(&sample::sample_report(), Some(\"5046eb28\"))"
+---
+<!-- pixeldelta -->
+### pixeldelta: 1 changed, 1 added, 1 removed, 1 size mismatch
+
+| category | count |
+| --- | --: |
+| changed | 1 |
+| added | 1 |
+| removed | 1 |
+| size mismatch | 1 |
+| matched | 1 |
+
+Compared against `5046eb28` with threshold 0.1, anti-aliasing excluded.
+
+#### changed
+
+| path | diff pixels | ratio | clusters | min ssim |
+| --- | --: | --: | --- | --: |
+| `components/button/primary.png` | 1284 | 2.01% | 1 moved (+0, +4), 1 changed | 0.412 |
+
+#### size mismatch
+
+- `pages/dashboard.png` — 1280x864 to 1280x912
+
+#### added
+
+- `components/toast.png`
+
+#### removed
+
+- `components/banner-legacy.png`
