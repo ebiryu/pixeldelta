@@ -1,0 +1,10 @@
+# Git for Windows checks text files out with CRLF by default, which would make
+# the launcher start with `#!/usr/bin/env node\r\n`. A POSIX kernel reading that
+# shebang looks for an interpreter named `node\r`, so every text file is stored
+# and checked out with LF.
+* text=auto eol=lf
+
+# Marked binary explicitly rather than left to content detection.
+*.png binary
+*.node binary
+*.wasm binary
