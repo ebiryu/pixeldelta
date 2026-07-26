@@ -102,6 +102,18 @@ allow = [
     # published binaries. The license is permissive and its only condition is
     # the same notice retention MIT requires.
     "Unicode-3.0",
+    # Covers ring, untrusted and rustls-webpki, which the TLS of the `ci`
+    # subcommand rests on, and libloading, which napi-sys loads Node's symbols
+    # with. Its only condition is the notice retention MIT also requires.
+    "ISC",
+    # Covers subtle, the constant-time comparisons rustls uses. It adds a
+    # condition on using the contributors' names to endorse a derived work,
+    # which redistributing the crate unchanged does not do.
+    "BSD-3-Clause",
+    # Covers webpki-roots, the set of root certificates rustls verifies with.
+    # The license governs the data rather than code, and permits redistribution
+    # with the notice kept.
+    "CDLA-Permissive-2.0",
 ]
 # The confidence threshold for detecting a license from license text.
 # The higher the value, the more closely the license text must be to the
