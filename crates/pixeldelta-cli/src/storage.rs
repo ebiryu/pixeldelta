@@ -18,6 +18,9 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::paths::collect_pngs;
+use crate::s3::S3;
+
+pub use crate::s3::S3Config;
 
 /// Version this build writes and reads.
 const MANIFEST_VERSION: u32 = 1;
@@ -30,10 +33,12 @@ struct Manifest {
 }
 
 /// Where snapshots are kept.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum Storage {
     /// A directory on the local filesystem, which has no public URL.
     Dir(PathBuf),
+    /// A bucket on an S3-compatible service.
+    S3(Box<S3>),
 }
 
 /// Reasons a snapshot cannot be read or written.
@@ -72,13 +77,44 @@ pub enum StorageError {
     /// A path in the manifest would write outside the destination.
     #[error("the manifest for {key} holds {path}, which leaves the destination directory")]
     ManifestPath { key: String, path: String },
+    /// An object listed in a manifest is not in the storage.
+    #[error("{path} is listed in the manifest but is not stored")]
+    MissingObject { path: String },
+    /// The storage answered a request with a status that is not success.
+    #[error("the storage answered {status} for {path}")]
+    Status { status: u16, path: String },
+    /// The request could not be carried out.
+    #[error("{path} could not be requested: {source}")]
+    Request {
+        path: String,
+        source: Box<ureq::Error>,
+    },
+    /// The storage location names a service this build does not speak to.
+    #[error("{variable} is not set, and an S3 storage needs it")]
+    MissingEnv { variable: String },
 }
 
 impl Storage {
     /// Reads the `--storage` argument.
     ///
-    /// A spec without a scheme is a directory on the local filesystem.
+    /// A spec without a scheme is a directory on the local filesystem. An
+    /// `s3://bucket/prefix` spec takes the rest of its settings, including the
+    /// credentials, from the environment.
     pub fn parse(spec: &str) -> Result<Self, StorageError> {
+        if let Some(rest) = spec.strip_prefix("s3://") {
+            let (bucket, prefix) = rest.split_once('/').unwrap_or((rest, ""));
+            return Ok(Storage::s3(S3Config {
+                bucket: bucket.to_owned(),
+                prefix: prefix.to_owned(),
+                region: env("AWS_REGION").unwrap_or_else(|| "us-east-1".to_owned()),
+                endpoint: env("AWS_ENDPOINT_URL"),
+                credentials: crate::Credentials {
+                    key_id: required_env("AWS_ACCESS_KEY_ID")?,
+                    secret: required_env("AWS_SECRET_ACCESS_KEY")?,
+                    session_token: env("AWS_SESSION_TOKEN"),
+                },
+            }));
+        }
         if spec.contains("://") {
             return Err(StorageError::Location {
                 spec: spec.to_owned(),
@@ -87,26 +123,29 @@ impl Storage {
         Ok(Storage::Dir(PathBuf::from(spec)))
     }
 
+    /// Builds a storage on an S3-compatible service.
+    pub fn s3(config: S3Config) -> Storage {
+        Storage::S3(Box::new(S3::new(config)))
+    }
+
     /// Whether a complete snapshot is stored under `key`.
     pub fn exists(&self, key: &str) -> Result<bool, StorageError> {
-        let Storage::Dir(root) = self;
-        Ok(key_dir(root, key)?.join("manifest.json").is_file())
+        validate_key(key)?;
+        self.object_exists(&format!("{key}/manifest.json"))
     }
 
     /// Writes the snapshot stored under `key` into `dest`.
     ///
     /// Returns the relative paths it wrote, in the order the manifest holds.
     pub fn fetch(&self, key: &str, dest: &Path) -> Result<Vec<String>, StorageError> {
-        let Storage::Dir(root) = self;
-        let dir = key_dir(root, key)?;
-        let manifest_path = dir.join("manifest.json");
-        if !manifest_path.is_file() {
-            return Err(StorageError::Missing {
+        validate_key(key)?;
+        let manifest_path = format!("{key}/manifest.json");
+        let bytes = self
+            .get_object(&manifest_path)?
+            .ok_or_else(|| StorageError::Missing {
                 key: key.to_owned(),
-            });
-        }
+            })?;
 
-        let bytes = read(&manifest_path)?;
         let manifest: Manifest =
             serde_json::from_slice(&bytes).map_err(|source| StorageError::Manifest {
                 key: key.to_owned(),
@@ -121,7 +160,10 @@ impl Storage {
 
         for file in &manifest.files {
             let rel = relative_path(key, file)?;
-            let bytes = read(&dir.join("images").join(&rel))?;
+            let path = format!("{key}/images/{file}");
+            let bytes = self
+                .get_object(&path)?
+                .ok_or(StorageError::MissingObject { path })?;
             write(&dest.join(&rel), &bytes)?;
         }
         Ok(manifest.files)
@@ -131,8 +173,7 @@ impl Storage {
     ///
     /// Returns a URL when the backend can serve one.
     pub fn store(&self, key: &str, dir: &Path) -> Result<Option<String>, StorageError> {
-        let Storage::Dir(root) = self;
-        let target = key_dir(root, key)?;
+        validate_key(key)?;
         let files: Vec<String> = collect_pngs(dir)
             .map_err(|error| StorageError::Read {
                 path: error.path,
@@ -143,15 +184,17 @@ impl Storage {
 
         for file in &files {
             let bytes = read(&dir.join(file))?;
-            write(&target.join("images").join(file), &bytes)?;
+            self.put_object(&format!("{key}/images/{file}"), &bytes)?;
         }
 
+        // Written last: a key counts as stored once its manifest is there, so
+        // a write that stopped halfway is not picked as a baseline.
         let manifest = Manifest {
             version: MANIFEST_VERSION,
             files,
         };
         let json = serde_json::to_vec(&manifest).expect("a manifest of strings serializes");
-        write(&target.join("manifest.json"), &json)?;
+        self.put_object(&format!("{key}/manifest.json"), &json)?;
         Ok(None)
     }
 
@@ -159,27 +202,116 @@ impl Storage {
     ///
     /// Returns a URL when the backend can serve one.
     pub fn store_report(&self, key: &str, html: &[u8]) -> Result<Option<String>, StorageError> {
-        let Storage::Dir(root) = self;
-        write(&key_dir(root, key)?.join("report").join("index.html"), html)?;
-        Ok(None)
+        validate_key(key)?;
+        let path = format!("{key}/report/index.html");
+        self.put_object(&path, html)?;
+        Ok(self.object_url(&path))
+    }
+
+    /// Where an object can be read from, when the backend serves URLs.
+    pub fn object_url(&self, path: &str) -> Option<String> {
+        match self {
+            Storage::Dir(_) => None,
+            Storage::S3(s3) => Some(s3.url(path)),
+        }
+    }
+
+    fn object_exists(&self, path: &str) -> Result<bool, StorageError> {
+        match self {
+            Storage::Dir(root) => Ok(root.join(path).is_file()),
+            Storage::S3(s3) => match self.answer(s3, "HEAD", path, &[])?.status {
+                200..=299 => Ok(true),
+                404 => Ok(false),
+                status => Err(StorageError::Status {
+                    status,
+                    path: path.to_owned(),
+                }),
+            },
+        }
+    }
+
+    /// Reads an object, answering `None` when it is not stored.
+    fn get_object(&self, path: &str) -> Result<Option<Vec<u8>>, StorageError> {
+        match self {
+            Storage::Dir(root) => match std::fs::read(root.join(path)) {
+                Ok(bytes) => Ok(Some(bytes)),
+                Err(source) if source.kind() == std::io::ErrorKind::NotFound => Ok(None),
+                Err(source) => Err(StorageError::Read {
+                    path: root.join(path),
+                    source,
+                }),
+            },
+            Storage::S3(s3) => {
+                let answer = self.answer(s3, "GET", path, &[])?;
+                match answer.status {
+                    200..=299 => Ok(Some(answer.body)),
+                    404 => Ok(None),
+                    status => Err(StorageError::Status {
+                        status,
+                        path: path.to_owned(),
+                    }),
+                }
+            }
+        }
+    }
+
+    fn put_object(&self, path: &str, bytes: &[u8]) -> Result<(), StorageError> {
+        match self {
+            Storage::Dir(root) => write(&root.join(path), bytes),
+            Storage::S3(s3) => {
+                let answer = self.answer(s3, "PUT", path, bytes)?;
+                match answer.status {
+                    200..=299 => Ok(()),
+                    status => Err(StorageError::Status {
+                        status,
+                        path: path.to_owned(),
+                    }),
+                }
+            }
+        }
+    }
+
+    fn answer(
+        &self,
+        s3: &S3,
+        method: &str,
+        path: &str,
+        body: &[u8],
+    ) -> Result<crate::s3::Answer, StorageError> {
+        s3.send(method, path, body)
+            .map_err(|source| StorageError::Request {
+                path: path.to_owned(),
+                source: Box::new(source),
+            })
     }
 }
 
-/// Resolves the directory holding one key.
+fn env(name: &str) -> Option<String> {
+    std::env::var(name).ok().filter(|value| !value.is_empty())
+}
+
+fn required_env(name: &str) -> Result<String, StorageError> {
+    env(name).ok_or_else(|| StorageError::MissingEnv {
+        variable: name.to_owned(),
+    })
+}
+
+/// Checks that a key can stand as a path component.
 ///
 /// Keys are commit hashes; rejecting anything else keeps a key from reaching
 /// outside the storage root.
-fn key_dir(root: &Path, key: &str) -> Result<PathBuf, StorageError> {
+fn validate_key(key: &str) -> Result<(), StorageError> {
     let valid = !key.is_empty()
         && key
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
-    if !valid {
-        return Err(StorageError::Key {
+    if valid {
+        Ok(())
+    } else {
+        Err(StorageError::Key {
             key: key.to_owned(),
-        });
+        })
     }
-    Ok(root.join(key))
 }
 
 /// Turns a path from a manifest into one that stays under the destination.
@@ -248,11 +380,9 @@ mod tests {
 
     #[test]
     fn a_key_that_is_not_a_hash_is_rejected() {
-        let root = Path::new("/store");
-
         for key in ["", "..", "a/b", "a b"] {
-            assert!(key_dir(root, key).is_err(), "{key} should be rejected");
+            assert!(validate_key(key).is_err(), "{key} should be rejected");
         }
-        assert!(key_dir(root, "0123abc").is_ok());
+        assert!(validate_key("0123abc").is_ok());
     }
 }

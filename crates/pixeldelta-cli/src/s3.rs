@@ -1,0 +1,217 @@
+//! The S3-compatible backend for snapshot storage.
+//!
+//! Only three operations are used: `HEAD` to see whether a key is stored,
+//! `GET` to read an object, and `PUT` to write one. Anything an S3-compatible
+//! service has beyond that is not needed to keep snapshots.
+
+use crate::sigv4::{self, Credentials};
+
+/// Where an S3-compatible storage lives and how to authenticate to it.
+#[derive(Debug, Clone)]
+pub struct S3Config {
+    pub bucket: String,
+    /// Prefix every object sits under, which may be empty.
+    pub prefix: String,
+    pub region: String,
+    /// Set for a service other than AWS, such as R2 or MinIO.
+    pub endpoint: Option<String>,
+    pub credentials: Credentials,
+}
+
+/// A client for one bucket.
+///
+/// Public because it names a variant of [`crate::Storage`]; the operations on
+/// it are reached through that enum.
+pub struct S3 {
+    config: S3Config,
+    agent: ureq::Agent,
+}
+
+/// What a request came back with.
+pub(crate) struct Answer {
+    pub status: u16,
+    pub body: Vec<u8>,
+}
+
+impl std::fmt::Debug for S3 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("S3")
+            .field("bucket", &self.config.bucket)
+            .field("prefix", &self.config.prefix)
+            .field("region", &self.config.region)
+            .field("endpoint", &self.config.endpoint)
+            .finish()
+    }
+}
+
+impl S3 {
+    pub(crate) fn new(config: S3Config) -> S3 {
+        // Statuses outside 2xx are answers this crate reads, not transport
+        // failures: a 404 means the key is not stored.
+        let agent = ureq::Agent::new_with_config(
+            ureq::Agent::config_builder()
+                .http_status_as_error(false)
+                .build(),
+        );
+        S3 { config, agent }
+    }
+
+    /// Full URL of an object, where `path` is relative to the prefix.
+    pub(crate) fn url(&self, path: &str) -> String {
+        match &self.config.endpoint {
+            Some(endpoint) => format!(
+                "{}/{}/{}",
+                endpoint.trim_end_matches('/'),
+                self.config.bucket,
+                self.object_key(path)
+            ),
+            None => format!("https://{}/{}", self.host(), self.object_key(path)),
+        }
+    }
+
+    /// Sends one request, returning the status and body it answered with.
+    pub(crate) fn send(
+        &self,
+        method: &str,
+        path: &str,
+        body: &[u8],
+    ) -> Result<Answer, ureq::Error> {
+        let url = self.url(path);
+        let headers = sigv4::sign(
+            &sigv4::Request {
+                method,
+                path: &sigv4::encode_path(&self.signed_path(path)),
+                host: &self.host(),
+                region: &self.config.region,
+                body,
+                timestamp: &sigv4::timestamp(now()),
+            },
+            &self.config.credentials,
+        );
+
+        let mut request = match method {
+            "HEAD" => self.agent.head(&url),
+            "GET" => self.agent.get(&url),
+            _ => {
+                let mut request = self.agent.put(&url);
+                for (name, value) in &headers {
+                    request = request.header(name, value);
+                }
+                let mut answer = request.send(body)?;
+                return Ok(Answer {
+                    status: answer.status().as_u16(),
+                    body: answer.body_mut().read_to_vec()?,
+                });
+            }
+        };
+        for (name, value) in &headers {
+            request = request.header(name, value);
+        }
+        let mut answer = request.call()?;
+        Ok(Answer {
+            status: answer.status().as_u16(),
+            body: answer.body_mut().read_to_vec()?,
+        })
+    }
+
+    /// Host the request goes to, which the signature covers.
+    fn host(&self) -> String {
+        match &self.config.endpoint {
+            Some(endpoint) => endpoint
+                .trim_end_matches('/')
+                .split_once("://")
+                .map(|(_, rest)| rest)
+                .unwrap_or(endpoint)
+                .to_owned(),
+            None => format!(
+                "{}.s3.{}.amazonaws.com",
+                self.config.bucket, self.config.region
+            ),
+        }
+    }
+
+    /// Object key within the bucket.
+    fn object_key(&self, path: &str) -> String {
+        match self.config.prefix.trim_matches('/') {
+            "" => path.to_owned(),
+            prefix => format!("{prefix}/{path}"),
+        }
+    }
+
+    /// Path the signature covers, which holds the bucket when the request goes
+    /// to an endpoint rather than to the bucket's own host.
+    fn signed_path(&self, path: &str) -> String {
+        match &self.config.endpoint {
+            Some(_) => format!("/{}/{}", self.config.bucket, self.object_key(path)),
+            None => format!("/{}", self.object_key(path)),
+        }
+    }
+}
+
+/// Seconds since the Unix epoch.
+///
+/// A clock before the epoch would only make the signature stale, which the
+/// service reports, so it reads as zero rather than failing here.
+fn now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|since| since.as_secs())
+        .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn config(endpoint: Option<&str>) -> S3Config {
+        S3Config {
+            bucket: "shots".into(),
+            prefix: "pixeldelta".into(),
+            region: "us-east-1".into(),
+            endpoint: endpoint.map(str::to_owned),
+            credentials: Credentials {
+                key_id: "id".into(),
+                secret: "secret".into(),
+                session_token: None,
+            },
+        }
+    }
+
+    #[test]
+    fn an_endpoint_puts_the_bucket_in_the_path() {
+        let s3 = S3::new(config(Some("https://example.invalid")));
+
+        assert_eq!(
+            s3.url("abc/manifest.json"),
+            "https://example.invalid/shots/pixeldelta/abc/manifest.json"
+        );
+        assert_eq!(s3.host(), "example.invalid");
+        assert_eq!(
+            s3.signed_path("abc/manifest.json"),
+            "/shots/pixeldelta/abc/manifest.json"
+        );
+    }
+
+    #[test]
+    fn without_an_endpoint_the_bucket_is_the_host() {
+        let s3 = S3::new(config(None));
+
+        assert_eq!(
+            s3.url("abc/manifest.json"),
+            "https://shots.s3.us-east-1.amazonaws.com/pixeldelta/abc/manifest.json"
+        );
+        assert_eq!(
+            s3.signed_path("abc/manifest.json"),
+            "/pixeldelta/abc/manifest.json"
+        );
+    }
+
+    #[test]
+    fn an_empty_prefix_leaves_the_key_alone() {
+        let mut config = config(None);
+        config.prefix = String::new();
+        let s3 = S3::new(config);
+
+        assert_eq!(s3.object_key("abc/manifest.json"), "abc/manifest.json");
+    }
+}

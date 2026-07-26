@@ -28,3 +28,11 @@ serde_json = "1"
 # Holds the baseline snapshot the `ci` subcommand fetches, which is discarded
 # once the comparison is done.
 tempfile = "3"
+# Sends the S3 and GitHub requests. Blocking, so the sequential work of the `ci`
+# subcommand does not pull an async runtime into the build.
+ureq = "3"
+# Signs S3 requests with SigV4, which is HMAC-SHA256 over a canonical form of
+# the request. Writing SHA-256 and HMAC by hand is about 200 lines of code that
+# has to be right the first time.
+hmac = "0.12"
+sha2 = "0.10"

@@ -7,6 +7,8 @@ mod baseline;
 mod ci;
 mod paths;
 mod run;
+mod s3;
+mod sigv4;
 mod storage;
 
 use std::path::Path;
@@ -17,7 +19,8 @@ use pixeldelta_io::{decode_file, encode_png, DecodeError, EncodeError};
 pub use baseline::{resolve_baseline, Baseline, BaselineError};
 pub use ci::{ci, CiOptions, CiRun};
 pub use run::{run_dirs, write_report};
-pub use storage::{Storage, StorageError};
+pub use sigv4::Credentials;
+pub use storage::{S3Config, Storage, StorageError};
 
 /// Summary of a `compare` run.
 #[derive(Debug, Clone, Copy, PartialEq)]
