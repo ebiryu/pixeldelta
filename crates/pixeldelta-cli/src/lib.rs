@@ -3,6 +3,7 @@
 //! Argument parsing lives in the binary; this library holds the work each
 //! subcommand does, so the operations can be tested without spawning a process.
 
+mod baseline;
 mod paths;
 mod run;
 mod storage;
@@ -12,6 +13,7 @@ use std::path::Path;
 use pixeldelta_core::{compare, CompareOptions, CompareResult, Image, Verdict};
 use pixeldelta_io::{decode_file, encode_png, DecodeError, EncodeError};
 
+pub use baseline::{resolve_baseline, Baseline, BaselineError};
 pub use run::{run_dirs, write_report};
 pub use storage::{Storage, StorageError};
 
