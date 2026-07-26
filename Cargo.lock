@@ -658,6 +658,8 @@ dependencies = [
  "pixeldelta-core",
  "pixeldelta-io",
  "pixeldelta-report",
+ "serde",
+ "serde_json",
  "tempfile",
  "thiserror",
 ]

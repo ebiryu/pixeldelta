@@ -201,34 +201,8 @@ pub fn write_report(
 }
 
 /// Collects the relative paths of every `.png` under `root`.
-///
-/// The paths use forward slashes so the two directories pair the same way on
-/// every platform.
 fn collect_pngs(root: &Path) -> Result<BTreeSet<String>, CliError> {
-    let mut out = BTreeSet::new();
-    walk(root, root, &mut out)?;
-    Ok(out)
-}
-
-fn walk(root: &Path, dir: &Path, out: &mut BTreeSet<String>) -> Result<(), CliError> {
-    let reader = std::fs::read_dir(dir).map_err(|source| read_error(dir, source))?;
-    for entry in reader {
-        let path = entry.map_err(|source| read_error(dir, source))?.path();
-        if path.is_dir() {
-            walk(root, &path, out)?;
-        } else if is_png(&path) {
-            let rel = path
-                .strip_prefix(root)
-                .expect("the walk stays under the root");
-            out.insert(rel.to_string_lossy().replace('\\', "/"));
-        }
-    }
-    Ok(())
-}
-
-fn is_png(path: &Path) -> bool {
-    path.extension()
-        .is_some_and(|ext| ext.eq_ignore_ascii_case("png"))
+    crate::paths::collect_pngs(root).map_err(|error| read_error(&error.path, error.source))
 }
 
 fn read_error(path: &Path, source: std::io::Error) -> CliError {
