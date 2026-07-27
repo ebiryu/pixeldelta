@@ -43,6 +43,7 @@
     "build:cli": "cargo build --release --manifest-path ../../crates/pixeldelta-cli/Cargo.toml && node scripts/place-cli.mjs",
     "artifacts": "napi artifacts",
     "test": "node --test \"test/*.test.mjs\"",
+    "test:wasi": "node scripts/test-wasi.mjs",
     "version": "napi version"
   },
   "devDependencies": {

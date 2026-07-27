@@ -41,6 +41,20 @@ node:
     pnpm --filter pixeldelta run build:cli
     pnpm --filter pixeldelta test
 
+# Build the addon for WebAssembly (WASI) and run the library tests against it.
+#
+# This is the binding a host with no prebuild gets, so it has to load and
+# return the same counts as the native one. `just node` cannot cover it: the
+# loader prefers the native addon whenever one is present.
+#
+# The command-line tests are left out, because the WebAssembly package carries
+# no executable.
+node-wasi:
+    rustup target add wasm32-wasip1-threads
+    pnpm install
+    cd packages/pixeldelta && pnpm build --target wasm32-wasip1-threads
+    pnpm --filter pixeldelta run test:wasi
+
 # Pack the package and load it from an empty project, to check the published
 # layout resolves on the host. See tools/smoke/README.md.
 smoke:
