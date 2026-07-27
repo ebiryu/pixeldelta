@@ -47,16 +47,20 @@ trap 'rm -rf "$work"' EXIT
 # `npm publish` for the root package, and `napi prepublish` calls it for each
 # platform package. The client matters here. `pnpm pack` writes every file as
 # 0644, which drops the executable bit the command-line binary needs.
+#
+# npm names each tarball after the version in its package.json and prints that
+# name, which is what the rest of this script goes by. Spelling the version out
+# here instead would leave one more file for a release to keep in step.
 echo "Packing the tarballs..."
-( cd "$pkg" && npm pack --loglevel=warn --pack-destination "$work" >/dev/null )
-( cd "$pkg/npm/$tag" && npm pack --loglevel=warn --pack-destination "$work" >/dev/null )
+root_tgz=$( cd "$pkg" && npm pack --loglevel=warn --pack-destination "$work" | tail -1 )
+platform_tgz=$( cd "$pkg/npm/$tag" && npm pack --loglevel=warn --pack-destination "$work" | tail -1 )
 
 # Extract into a flat node_modules, as npm would install them. Each tarball
 # holds its files under a top-level `package/` directory.
 modules="$work/app/node_modules"
 mkdir -p "$modules/pixeldelta" "$modules/pixeldelta-$tag"
-tar -xzf "$work"/pixeldelta-0.0.0.tgz -C "$modules/pixeldelta" --strip-components=1
-tar -xzf "$work/pixeldelta-$tag-0.0.0.tgz" -C "$modules/pixeldelta-$tag" --strip-components=1
+tar -xzf "$work/$root_tgz" -C "$modules/pixeldelta" --strip-components=1
+tar -xzf "$work/$platform_tgz" -C "$modules/pixeldelta-$tag" --strip-components=1
 
 app="$work/app"
 cp "$smoke/smoke.test.mjs" "$app/"
@@ -83,8 +87,8 @@ cat > "$cli/package.json" <<EOF
     "compare-differ": "pixeldelta compare base.png head.png"
   },
   "dependencies": {
-    "pixeldelta": "file:$work/pixeldelta-0.0.0.tgz",
-    "pixeldelta-$tag": "file:$work/pixeldelta-$tag-0.0.0.tgz"
+    "pixeldelta": "file:$work/$root_tgz",
+    "pixeldelta-$tag": "file:$work/$platform_tgz"
   }
 }
 EOF
