@@ -8,7 +8,9 @@
 //      into the optionalDependencies it writes for them.
 //   2. `packages/pixeldelta/npm/*/package.json`, the platform packages. What is
 //      committed here is what the copy above will produce, so that the layout
-//      can be read without running a release.
+//      can be read without running a release. `npm/wasm` sits among them: it is
+//      published by the same job at the same version, though napi-rs does not
+//      know about it.
 //   3. `Cargo.toml`, which `pixeldelta --version` reports through
 //      CARGO_PKG_VERSION. The crates are not published to crates.io, so the
 //      version has no other reader.

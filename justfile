@@ -49,11 +49,16 @@ node:
 #
 # The command-line tests are left out, because the WebAssembly package carries
 # no executable.
+#
+# It ends by assembling pixeldelta-wasm, which publishes this build to hosts
+# with no prebuild and to browsers. That step fails unless every file the
+# package lists has arrived beside its manifest.
 node-wasi:
     rustup target add wasm32-wasip1-threads
     pnpm install
     cd packages/pixeldelta && pnpm build --target wasm32-wasip1-threads
     pnpm --filter pixeldelta run test:wasi
+    cd packages/pixeldelta && node scripts/place-wasm.mjs
 
 # Pack the package and load it from an empty project, to check the published
 # layout resolves on the host. See tools/smoke/README.md.

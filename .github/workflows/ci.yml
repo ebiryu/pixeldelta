@@ -254,6 +254,13 @@ jobs:
           name: bindings-wasm32-wasip1-threads
           path: packages/pixeldelta
       - run: pnpm --filter pixeldelta run test:wasi
+      # pixeldelta-wasm carries this build to hosts with no prebuild and to
+      # browsers. The script fails unless every file its manifest lists has
+      # arrived, so running it here catches a package that would install and
+      # then throw, on the one job that holds the .wasm.
+      - name: Assemble the WebAssembly package
+        run: node scripts/place-wasm.mjs
+        working-directory: packages/pixeldelta
 
   publish:
     name: Publish
@@ -299,6 +306,13 @@ jobs:
       - name: Move each executable into its platform package
         run: node scripts/place-cli.mjs --artifacts ./artifacts
         working-directory: packages/pixeldelta
+      # pixeldelta-wasm is not one of napi's targets, so it is assembled and
+      # published here rather than by `napi prepublish`. It holds the same
+      # WebAssembly build as pixeldelta-wasm32-wasi, without the cpu field that
+      # keeps that one from being installed.
+      - name: Assemble the WebAssembly package
+        run: node scripts/place-wasm.mjs --artifacts ./artifacts
+        working-directory: packages/pixeldelta
       # A tagged release publishes over OIDC: no token, and npm attaches
       # provenance on its own. The bootstrap dispatch instead authenticates with
       # NPM_TOKEN and turns provenance on by hand, which token publishes need.
@@ -306,6 +320,10 @@ jobs:
       # it from creating a GitHub release, which this job has no token or write
       # permission for. Their publishConfig sets access public so provenance
       # holds for the first publish of each new name.
+      #
+      # pixeldelta-wasm goes out before the root package, which is the one that
+      # reaches for it, and like the platform packages it needs the bootstrap
+      # dispatch for its first publish: OIDC cannot create a name.
       - name: Publish
         working-directory: packages/pixeldelta
         run: |
@@ -313,6 +331,7 @@ jobs:
             npm config set provenance true
           fi
           pnpm exec napi prepublish -t npm --no-gh-release
+          npm publish ./npm/wasm --access public
           npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ inputs.bootstrap && secrets.NPM_TOKEN || '' }}

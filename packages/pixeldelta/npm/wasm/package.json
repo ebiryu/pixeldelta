@@ -1,0 +1,33 @@
+{
+  "name": "pixeldelta-wasm",
+  "version": "0.1.1",
+  "main": "pixeldelta.wasi.cjs",
+  "browser": "pixeldelta.wasi-browser.js",
+  "types": "index.d.ts",
+  "files": [
+    "pixeldelta.wasm32-wasi.wasm",
+    "pixeldelta.wasi.cjs",
+    "pixeldelta.wasi-browser.js",
+    "wasi-worker.mjs",
+    "wasi-worker-browser.mjs",
+    "index.d.ts"
+  ],
+  "description": "WebAssembly build of pixeldelta, for hosts with no prebuild and for browsers",
+  "license": "MIT",
+  "engines": {
+    "node": ">= 16"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ebiryu/pixeldelta.git",
+    "directory": "packages/pixeldelta"
+  },
+  "dependencies": {
+    "@napi-rs/wasm-runtime": "^1.1.6",
+    "@emnapi/core": "1.11.2",
+    "@emnapi/runtime": "1.11.2"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

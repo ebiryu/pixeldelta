@@ -8,16 +8,17 @@
     "url": "git+https://github.com/ebiryu/pixeldelta.git",
     "directory": "packages/pixeldelta"
   },
-  "main": "index.js",
+  "main": "main.js",
   "types": "index.d.ts",
-  "browser": "browser.js",
+  "browser": "browser-entry.js",
   "bin": {
     "pixeldelta": "cli.js"
   },
   "files": [
+    "main.js",
     "index.js",
     "index.d.ts",
-    "browser.js",
+    "browser-entry.js",
     "cli.js"
   ],
   "napi": {

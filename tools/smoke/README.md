@@ -53,3 +53,17 @@ npx pixeldelta --version
 
 A working install pulls exactly one `pixeldelta-<platform>` package for the
 current OS and CPU. Run it on each OS the matrix builds for.
+
+The WebAssembly fallback is not covered either, on either side. `--omit=optional`
+leaves out the platform packages, which is what a host with no prebuild sees:
+
+```bash
+mkdir /tmp/pixeldelta-wasm-install && cd /tmp/pixeldelta-wasm-install
+npm init -y
+npm install pixeldelta pixeldelta-wasm --omit=optional
+node -e "const {compareSync} = require('pixeldelta'); \
+  console.log(compareSync(process.argv[1], process.argv[1]).verdict)" /tmp/some.png
+```
+
+Pass an absolute path: the WebAssembly build resolves paths through a preopen of
+the filesystem root, and a relative one does not reach it.

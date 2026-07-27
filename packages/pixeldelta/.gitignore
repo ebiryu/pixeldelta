@@ -18,3 +18,10 @@ artifacts/
 npm/*/pixeldelta
 npm/*/pixeldelta.exe
 pixeldelta-cli.*
+
+# npm/wasm holds copies: scripts/place-wasm.mjs fills it from the loaders
+# beside this file and the built .wasm, and only its own manifest and README
+# are written by hand.
+npm/wasm/*
+!npm/wasm/package.json
+!npm/wasm/README.md

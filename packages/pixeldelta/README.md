@@ -8,14 +8,24 @@ change spread across the screen.
 
 The comparison engine is written in Rust. Each platform gets a prebuilt binary
 through an optional dependency; the install downloads no source and runs no
-build. Environments without a matching prebuild fall back to a WebAssembly
-(WASI) build.
+build. A host that no prebuild matches runs the same engine as WebAssembly,
+from a second package installed alongside.
 
 ## Install
 
 ```sh
 npm install pixeldelta
 ```
+
+The prebuilds cover macOS and Linux on x64 and arm64, Linux on musl at x64, and
+Windows on x64. Anywhere else, and in a browser, add the WebAssembly build:
+
+```sh
+npm install pixeldelta pixeldelta-wasm
+```
+
+`require('pixeldelta')` then loads that build when no prebuild matched, and says
+which package to install when neither is there.
 
 ## Usage
 
@@ -90,9 +100,16 @@ that fallback, and the command reports which platforms ship it.
 
 ## The WebAssembly fallback
 
-A host that no prebuild matches loads `pixeldelta-wasm32-wasi` instead. The API
-is the same and so are the results: every comparison timed below returns the
-same diff pixel count either way. Three things behave differently.
+`pixeldelta-wasm` holds the same engine built for `wasm32-wasip1-threads`, and
+`require('pixeldelta')` reaches it when no prebuild matched the host. It is a
+separate install rather than an optional dependency because a WebAssembly
+package declares `cpu: ["wasm32"]`, which matches no host: npm refuses such a
+package and pnpm skips it, so one listed as an optional dependency never
+arrives. `pixeldelta-wasm` declares no platform at all, which is what lets a
+package manager install it.
+
+The API is the same and so are the results: every comparison timed below returns
+the same diff pixel count either way. Three things behave differently.
 
 **Threads.** The native build sizes its thread pool from the core count. That
 count is not available under WASI, so the pool holds one thread. Setting
@@ -128,26 +145,18 @@ to a verdict, decode included.
 
 A bundler resolving this package for a browser target reaches the same
 WebAssembly build through the `browser` field, which points at
-`pixeldelta-wasm32-wasi`. `compare` and `compareSync` are the same as above.
-There is no filesystem behind them, so pass the PNG bytes as a `Uint8Array`
-rather than a path. The command line and the report are not part of this entry.
+`pixeldelta-wasm`. `compare` and `compareSync` are the same as above. There is
+no filesystem behind them, so pass the PNG bytes as a `Uint8Array` rather than a
+path. The command line and the report are not part of this entry.
 
 Two things the browser needs and Node does not.
 
-**Install the WebAssembly package yourself.** It declares `cpu: ["wasm32"]`, so
-a package manager will not take it from this package's optional dependencies.
-Name it as a direct dependency instead:
+**Install the WebAssembly package.** The `browser` field names it, so a bundler
+fails to resolve the entry unless it is there:
 
 ```sh
-pnpm add pixeldelta pixeldelta-wasm32-wasi
+npm install pixeldelta pixeldelta-wasm
 ```
-
-```sh
-npm install pixeldelta pixeldelta-wasm32-wasi --force
-```
-
-npm refuses the `cpu` field without `--force`, and installs nothing on the
-attempt. Other clients need whatever opt-in they offer for the same check.
 
 **Serve the page cross-origin isolated.** The build allocates shared memory and
 starts worker threads, so `SharedArrayBuffer` has to be available: send
