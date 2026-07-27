@@ -123,3 +123,37 @@ the host's memory alone. A 20000×20000 pair (400 Mpixel) still completes.
 Measured on an 8-core Apple M1 with Node 24.14.0, at threshold 0.1 with
 anti-aliasing detection on, as the median of five comparisons of two file paths
 to a verdict, decode included.
+
+## In the browser
+
+A bundler resolving this package for a browser target reaches the same
+WebAssembly build through the `browser` field, which points at
+`pixeldelta-wasm32-wasi`. `compare` and `compareSync` are the same as above.
+There is no filesystem behind them, so pass the PNG bytes as a `Uint8Array`
+rather than a path. The command line and the report are not part of this entry.
+
+Two things the browser needs and Node does not.
+
+**Install the WebAssembly package yourself.** It declares `cpu: ["wasm32"]`, so
+a package manager will not take it from this package's optional dependencies.
+Name it as a direct dependency instead:
+
+```sh
+pnpm add pixeldelta pixeldelta-wasm32-wasi
+```
+
+```sh
+npm install pixeldelta pixeldelta-wasm32-wasi --force
+```
+
+npm refuses the `cpu` field without `--force`, and installs nothing on the
+attempt. Other clients need whatever opt-in they offer for the same check.
+
+**Serve the page cross-origin isolated.** The build allocates shared memory and
+starts worker threads, so `SharedArrayBuffer` has to be available: send
+`Cross-Origin-Opener-Policy: same-origin` and
+`Cross-Origin-Embedder-Policy: require-corp` with the page.
+
+The entry imports `@napi-rs/wasm-runtime` and reaches the `.wasm` and its worker
+through `new URL(..., import.meta.url)`, so the bundler has to emit those two as
+assets rather than inline them.

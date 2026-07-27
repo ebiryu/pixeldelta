@@ -10,12 +10,14 @@
   },
   "main": "index.js",
   "types": "index.d.ts",
+  "browser": "browser.js",
   "bin": {
     "pixeldelta": "cli.js"
   },
   "files": [
     "index.js",
     "index.d.ts",
+    "browser.js",
     "cli.js"
   ],
   "napi": {
