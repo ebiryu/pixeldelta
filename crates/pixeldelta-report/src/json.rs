@@ -13,10 +13,8 @@ struct JsonReport<'a> {
     entries: &'a [Entry],
 }
 
-/// Renders the report as pixeldelta's own JSON schema.
-///
-/// The schema carries the cluster information, which the reg.json format has no
-/// place for; reg.json compatibility belongs to the reg-cli-compat package.
+/// Renders the report as pixeldelta's own JSON schema, including the cluster
+/// information of each entry.
 pub fn json(report: &Report) -> String {
     let view = JsonReport {
         threshold: report.threshold,
