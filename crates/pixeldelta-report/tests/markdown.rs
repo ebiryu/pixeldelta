@@ -6,7 +6,33 @@ use pixeldelta_report::markdown;
 
 #[test]
 fn markdown_matches_the_golden_file() {
-    insta::assert_snapshot!(markdown(&sample::sample_report(), "5046eb28"));
+    insta::assert_snapshot!(markdown(
+        &sample::sample_report(),
+        "5046eb28",
+        Some("https://reports.example.invalid/5046eb28/report/index.html"),
+    ));
+}
+
+/// A reader who has no report to open should not be given a link to nothing.
+#[test]
+fn a_body_without_a_url_carries_no_link() {
+    let body = markdown(&sample::sample_report(), "5046eb28", None);
+
+    assert!(!body.contains("]("), "{body}");
+}
+
+/// The link is placed before the lists, which are cut off at twenty rows.
+#[test]
+fn the_link_comes_before_the_lists() {
+    let url = "https://reports.example.invalid/index.html";
+
+    let body = markdown(&sample::sample_report(), "5046eb28", Some(url));
+
+    let link = body
+        .find(url)
+        .unwrap_or_else(|| panic!("the body carries the URL: {body}"));
+    let list = body.find("#### changed").expect("the sample has a list");
+    assert!(link < list, "{body}");
 }
 
 /// A body long enough to be rejected by the comment API would deliver nothing,
@@ -26,7 +52,7 @@ fn a_long_list_is_cut_off() {
         report.entries.push(entry);
     }
 
-    let body = markdown(&report, "5046eb28");
+    let body = markdown(&report, "5046eb28", None);
 
     assert_eq!(body.matches("| `generated/").count(), 19);
     assert!(body.contains("and 11 more"), "{body}");

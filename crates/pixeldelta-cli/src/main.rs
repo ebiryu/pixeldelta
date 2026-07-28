@@ -90,6 +90,10 @@ struct CiArgs {
     /// Write the HTML report into this directory as index.html.
     #[arg(long)]
     report: Option<PathBuf>,
+    /// Where the report will be readable, for workflows that publish it
+    /// themselves. Used in place of the URL the storage serves.
+    #[arg(long, requires = "report")]
+    report_url: Option<String>,
     /// Write the JSON report to this path.
     #[arg(long)]
     json: Option<PathBuf>,
@@ -157,6 +161,7 @@ fn run_ci(args: CiArgs) -> ExitCode {
         antialiasing: !args.no_antialiasing,
         tolerance_ratio: args.tolerance_ratio,
         report: args.report.as_deref(),
+        report_url: args.report_url.as_deref(),
         json: args.json.as_deref(),
         junit: args.junit.as_deref(),
         markdown: args.markdown.as_deref(),

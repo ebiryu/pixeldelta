@@ -19,7 +19,11 @@ pub const MARKER: &str = "<!-- pixeldelta -->";
 const MAX_ROWS: usize = 20;
 
 /// Renders the notification body for a comparison against `baseline`.
-pub fn markdown(report: &Report, baseline: &str) -> String {
+///
+/// `report_url` is where the HTML report can be read. The body names counts
+/// and paths but carries no image, so without the link a reader has no way
+/// from here to the difference itself.
+pub fn markdown(report: &Report, baseline: &str, report_url: Option<&str>) -> String {
     let summary = report.summary();
     let mut out = String::new();
 
@@ -62,6 +66,12 @@ pub fn markdown(report: &Report, baseline: &str) -> String {
         let _ = write!(out, ", tolerance {}", report.tolerance_ratio);
     }
     out.push_str(".\n");
+
+    // Ahead of the lists, which are cut off at MAX_ROWS, so a run with many
+    // changes does not put the link behind the cut.
+    if let Some(url) = report_url {
+        let _ = writeln!(out, "\n[Open the report]({url})");
+    }
 
     changed_table(&mut out, report);
     path_list(&mut out, report, Category::SizeMismatch, "size mismatch");

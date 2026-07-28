@@ -150,6 +150,36 @@ fn the_notification_body_is_appended_to_the_markdown_file() {
     assert!(body.contains("| changed | 1 |"), "{body}");
 }
 
+/// A local directory serves no URL, so the only way a reader learns where the
+/// report is published is the value handed in from outside.
+#[test]
+fn the_notification_body_links_to_the_report() {
+    let dir = tempfile::tempdir().expect("a temporary directory");
+    let repo = dir.path().join("repo");
+    init(&repo);
+    let actual = dir.path().join("actual");
+    write_png(&actual.join("a.png"), 8, 8, [0, 128, 0, 255]);
+    let storage = storage(dir.path());
+
+    commit(&repo, "first");
+    ci(&options(&repo, &actual, &storage)).expect("the first run finishes");
+
+    write_png(&actual.join("a.png"), 8, 8, [255, 0, 0, 255]);
+    commit(&repo, "second");
+    let report_dir = dir.path().join("report");
+    let markdown = dir.path().join("summary.md");
+    let url = "https://reports.example.invalid/head/index.html";
+    let mut opts = options(&repo, &actual, &storage);
+    opts.report = Some(&report_dir);
+    opts.report_url = Some(url);
+    opts.markdown = Some(&markdown);
+    let run = ci(&opts).expect("the run finishes");
+
+    assert_eq!(run.report_url, Some(url.to_owned()));
+    let body = std::fs::read_to_string(&markdown).expect("the file is readable");
+    assert!(body.contains(url), "{body}");
+}
+
 /// The comment carries the same body as the markdown file, so a reader sees
 /// one account of the run wherever they look.
 #[test]
@@ -204,6 +234,7 @@ fn options<'a>(repo: &'a Path, actual: &'a Path, storage: &'a Storage) -> CiOpti
         antialiasing: true,
         tolerance_ratio: 0.0,
         report: None,
+        report_url: None,
         json: None,
         junit: None,
         markdown: None,
