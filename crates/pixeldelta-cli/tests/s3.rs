@@ -129,7 +129,7 @@ fn a_stored_report_answers_with_its_url() {
     let storage = Storage::s3(config(&stub.url()));
 
     let url = storage
-        .store_report("abc123", b"<html></html>")
+        .store_report("abc123", b"<html></html>", &[])
         .expect("the report is stored");
 
     assert_eq!(
@@ -158,7 +158,7 @@ fn a_put_carries_the_type_of_what_it_stores() {
         .store("abc123", dir.path())
         .expect("the snapshot is stored");
     storage
-        .store_report("abc123", b"<html></html>")
+        .store_report("abc123", b"<html></html>", &[])
         .expect("the report is stored");
 
     let requests = stub.requests();

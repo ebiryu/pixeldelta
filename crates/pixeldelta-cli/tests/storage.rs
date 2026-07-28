@@ -100,7 +100,7 @@ fn a_report_is_stored_under_the_key() {
     let storage = Storage::parse(root.path().to_str().expect("a UTF-8 path")).expect("a spec");
 
     let url = storage
-        .store_report(KEY, b"<html></html>")
+        .store_report(KEY, b"<html></html>", &[])
         .expect("the report is stored");
 
     assert_eq!(url, None, "a local directory has no public URL");

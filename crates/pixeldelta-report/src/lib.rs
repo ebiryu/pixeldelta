@@ -13,10 +13,18 @@ mod markdown;
 
 use serde::Serialize;
 
-pub use html::html;
+pub use html::{asset_path, html, local_assets, url_path};
 pub use json::json;
 pub use junit::junit;
 pub use markdown::{markdown, MARKER};
+
+/// Which of an entry's images a source is asked for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Side {
+    Expected,
+    Actual,
+    Diff,
+}
 
 /// Which side of the comparison an entry came out on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -56,8 +64,9 @@ pub struct Cluster {
 
 /// PNG bytes for the images an entry shows, filled per category.
 ///
-/// Not serialized: JSON and JUnit carry no images, and the HTML embeds these as
-/// data URIs.
+/// Not serialized: JSON and JUnit carry no images. `html()` does not read this
+/// field; a caller writes these bytes out as PNG files and supplies matching
+/// URLs to the `src` callback instead.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Images {
     pub expected: Option<Vec<u8>>,

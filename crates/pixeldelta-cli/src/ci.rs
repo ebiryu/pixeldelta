@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use pixeldelta_report::Summary;
+use pixeldelta_report::{Entry, Side, Summary};
 
 use crate::baseline::resolve_baseline;
 use crate::github::{notify, GithubConfig, Notification};
@@ -99,12 +99,20 @@ pub fn ci(opts: &CiOptions) -> Result<CiRun, CliError> {
     )?;
     write_report(&report, None, opts.json, opts.junit)?;
 
-    // The report is stored only when it was asked for, since embedding every
-    // image makes it the largest thing the run writes.
+    // The report kept with the snapshot points expected and actual at the
+    // snapshot's own images by relative path (see `storage_assets`), so the
+    // snapshot has to be written before the report is.
+    opts.storage.store(&resolved.head, opts.actual)?;
+
+    // The report is stored only when it was asked for, since its diff images
+    // are the largest thing the run writes.
     let stored_url = match opts.report {
         Some(dir) => {
-            let html = write_html(&report, dir)?;
-            opts.storage.store_report(&resolved.head, html.as_bytes())?
+            write_html(&report, dir)?;
+            let html = pixeldelta_report::html(&report, storage_assets(&baseline));
+            let diff_images = diff_images(&report);
+            opts.storage
+                .store_report(&resolved.head, html.as_bytes(), &diff_images)?
         }
         None => None,
     };
@@ -128,8 +136,6 @@ pub fn ci(opts: &CiOptions) -> Result<CiRun, CliError> {
         _ => None,
     };
 
-    opts.storage.store(&resolved.head, opts.actual)?;
-
     Ok(CiRun {
         head: resolved.head,
         baseline: Some(baseline),
@@ -137,6 +143,55 @@ pub fn ci(opts: &CiOptions) -> Result<CiRun, CliError> {
         report_url,
         comment,
     })
+}
+
+/// Resolves images for the report kept with the snapshot.
+///
+/// Expected and actual point at the snapshots the storage already holds
+/// rather than being re-uploaded, since `<key>/report/index.html` and
+/// `<key>/images/<path>` share the same layout for both the Dir and S3
+/// backends. The diff image is stored alongside the report itself.
+fn storage_assets(baseline: &str) -> impl Fn(&Entry, Side) -> Option<String> + '_ {
+    move |entry, side| {
+        let held = match side {
+            Side::Expected => entry.images.expected.is_some(),
+            Side::Actual => entry.images.actual.is_some(),
+            Side::Diff => entry.images.diff.is_some(),
+        };
+        if !held {
+            return None;
+        }
+        Some(match side {
+            Side::Expected => format!(
+                "../../{baseline}/images/{}",
+                pixeldelta_report::url_path(&entry.path)
+            ),
+            Side::Actual => format!("../images/{}", pixeldelta_report::url_path(&entry.path)),
+            Side::Diff => {
+                pixeldelta_report::url_path(&pixeldelta_report::asset_path(&entry.path, Side::Diff))
+            }
+        })
+    }
+}
+
+/// Collects the diff image each entry holds, as a path below the report
+/// directory and its bytes.
+///
+/// Expected and actual are left out: they are already in the storage as
+/// snapshots, so re-uploading them alongside the report would be redundant.
+fn diff_images(report: &pixeldelta_report::Report) -> Vec<(String, &[u8])> {
+    report
+        .entries
+        .iter()
+        .filter_map(|entry| {
+            entry.images.diff.as_deref().map(|bytes| {
+                (
+                    pixeldelta_report::asset_path(&entry.path, Side::Diff),
+                    bytes,
+                )
+            })
+        })
+        .collect()
 }
 
 /// Where the report can be read: the value given from outside, and otherwise

@@ -177,3 +177,23 @@ fn write_report_emits_the_requested_files() {
     assert!(dir.path().join("result.json").is_file());
     assert!(dir.path().join("result.xml").is_file());
 }
+
+#[test]
+fn write_report_writes_diff_images_as_files_and_the_html_has_no_data_uri() {
+    let dir = fixture();
+    let out = dir.path().join("out");
+    let report = run_dirs(
+        &dir.path().join("expected"),
+        &dir.path().join("actual"),
+        0.1,
+        true,
+        0.0,
+    )
+    .unwrap();
+
+    write_report(&report, Some(&out), None, None).expect("the files are written");
+
+    assert!(out.join("images/diff/nested/diff.png").is_file());
+    let html = std::fs::read_to_string(out.join("index.html")).expect("the file is readable");
+    assert!(!html.contains("data:image"), "{html}");
+}

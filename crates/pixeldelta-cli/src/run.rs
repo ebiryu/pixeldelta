@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use pixeldelta_core::{compare, CompareOptions, DiffStyle, Image, Verdict};
 use pixeldelta_io::{decode, encode_png, Decoded};
-use pixeldelta_report::{Category, Cluster, Entry, Images, Report};
+use pixeldelta_report::{Category, Cluster, Entry, Images, Report, Side};
 
 use crate::CliError;
 
@@ -194,16 +194,43 @@ fn to_cluster(c: &pixeldelta_core::Cluster) -> Cluster {
     }
 }
 
-/// Writes the HTML report into `dir` as index.html.
+/// Writes the HTML report into `dir` as index.html, alongside every image an
+/// entry holds.
 ///
-/// Returns what it wrote, so a caller that also stores the report does not
-/// render it twice.
-pub(crate) fn write_html(report: &Report, dir: &Path) -> Result<String, CliError> {
+/// The directory this produces is self-contained: it reuses no image from
+/// storage, so `dir` taken on its own shows every image once opened in a
+/// browser.
+pub(crate) fn write_html(report: &Report, dir: &Path) -> Result<(), CliError> {
     std::fs::create_dir_all(dir).map_err(|source| write_error(dir, source))?;
-    let html = pixeldelta_report::html(report);
+    for entry in &report.entries {
+        write_entry_images(entry, dir)?;
+    }
+    let html = pixeldelta_report::html(report, pixeldelta_report::local_assets);
     let index = dir.join("index.html");
     std::fs::write(&index, &html).map_err(|source| write_error(&index, source))?;
-    Ok(html)
+    Ok(())
+}
+
+/// Writes every image an entry holds to its path below `dir`.
+fn write_entry_images(entry: &Entry, dir: &Path) -> Result<(), CliError> {
+    for (side, bytes) in [
+        (Side::Expected, &entry.images.expected),
+        (Side::Actual, &entry.images.actual),
+        (Side::Diff, &entry.images.diff),
+    ] {
+        if let Some(bytes) = bytes {
+            let path = dir.join(pixeldelta_report::asset_path(&entry.path, side));
+            write_asset(&path, bytes)?;
+        }
+    }
+    Ok(())
+}
+
+fn write_asset(path: &Path, bytes: &[u8]) -> Result<(), CliError> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|source| write_error(parent, source))?;
+    }
+    std::fs::write(path, bytes).map_err(|source| write_error(path, source))
 }
 
 /// Writes each output that was requested.

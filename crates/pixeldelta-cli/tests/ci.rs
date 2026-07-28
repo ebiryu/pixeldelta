@@ -107,6 +107,47 @@ fn the_report_is_written_and_stored_when_it_is_asked_for() {
 }
 
 #[test]
+fn the_stored_report_points_expected_at_the_baseline_snapshot_and_skips_reupload() {
+    let dir = tempfile::tempdir().expect("a temporary directory");
+    let repo = dir.path().join("repo");
+    init(&repo);
+    let actual = dir.path().join("actual");
+    write_png(&actual.join("a.png"), 8, 8, [0, 128, 0, 255]);
+    let storage = storage(dir.path());
+
+    let first = commit(&repo, "first");
+    ci(&options(&repo, &actual, &storage)).expect("the first run finishes");
+
+    write_png(&actual.join("a.png"), 8, 8, [255, 0, 0, 255]);
+    let head = commit(&repo, "second");
+    let report_dir = dir.path().join("report");
+    let mut opts = options(&repo, &actual, &storage);
+    opts.report = Some(&report_dir);
+    ci(&opts).expect("the run finishes");
+
+    let stored_index = storage_root(dir.path())
+        .join(&head)
+        .join("report/index.html");
+    let html = std::fs::read_to_string(&stored_index).expect("the stored report is readable");
+    assert!(html.contains(&format!("../../{first}/images/")), "{html}");
+
+    assert!(
+        storage_root(dir.path())
+            .join(&head)
+            .join("report/images/diff/a.png")
+            .is_file(),
+        "the diff image is stored alongside the report"
+    );
+    assert!(
+        !storage_root(dir.path())
+            .join(&head)
+            .join("report/images/expected/a.png")
+            .exists(),
+        "expected is already in the baseline snapshot and is not re-uploaded"
+    );
+}
+
+#[test]
 fn without_a_report_flag_nothing_is_written() {
     let dir = tempfile::tempdir().expect("a temporary directory");
     let repo = dir.path().join("repo");

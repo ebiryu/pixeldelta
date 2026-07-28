@@ -1,13 +1,16 @@
 use std::fmt::Write;
 
-use crate::{Category, Cluster, Entry, Report};
+use crate::{Category, Cluster, Entry, Report, Side};
 
-/// Renders the report as a single self-contained HTML page.
+/// Renders the report as an HTML page.
 ///
-/// The page references no external resource: the images are embedded as
-/// base64 data URIs and the styles and behavior are inlined, so one file taken
-/// out of a CI artifact opens in a browser on its own.
-pub fn html(report: &Report) -> String {
+/// The styles and behavior are inlined, but the images are not: `src` is
+/// asked for the URL to put in an `<img>` tag for each of an entry's images,
+/// and answers `None` when the entry has no image on that side. This lets a
+/// caller choose between a self-contained directory of files and a report
+/// that points at images already held elsewhere.
+pub fn html(report: &Report, src: impl Fn(&Entry, Side) -> Option<String>) -> String {
+    let src: &dyn Fn(&Entry, Side) -> Option<String> = &src;
     let summary = report.summary();
     let mut ordered: Vec<&Entry> = report.entries.iter().collect();
     // Changed first, then the other differences, matched last; within a
@@ -72,7 +75,7 @@ pub fn html(report: &Report) -> String {
     out.push_str("<main class=\"wrap\"><div class=\"entries\" id=\"entries\">\n");
     for (index, entry) in ordered.iter().enumerate() {
         // The leading entry opens so the viewer is visible without a click.
-        write_entry(&mut out, entry, index == 0);
+        write_entry(&mut out, entry, index == 0, src);
     }
     out.push_str("</div></main>\n");
 
@@ -113,7 +116,12 @@ fn chip(out: &mut String, cat: &str, class: &str, count: u32, pressed: bool) {
     .unwrap();
 }
 
-fn write_entry(out: &mut String, entry: &Entry, open: bool) {
+fn write_entry(
+    out: &mut String,
+    entry: &Entry,
+    open: bool,
+    src: &dyn Fn(&Entry, Side) -> Option<String>,
+) {
     let cat = data_cat(entry.category);
     write!(
         out,
@@ -130,7 +138,7 @@ fn write_entry(out: &mut String, entry: &Entry, open: bool) {
     out.push_str("</div>");
     out.push_str(CHEVRON);
     out.push_str("</div><div class=\"body\">");
-    write_body(out, entry);
+    write_body(out, entry, src);
     out.push_str("</div></article>\n");
 }
 
@@ -161,27 +169,27 @@ fn metric(out: &mut String, value: &str, key: &str) {
     .unwrap();
 }
 
-fn write_body(out: &mut String, entry: &Entry) {
+fn write_body(out: &mut String, entry: &Entry, src: &dyn Fn(&Entry, Side) -> Option<String>) {
     match entry.category {
-        Category::Changed => write_changed_body(out, entry),
+        Category::Changed => write_changed_body(out, entry, src),
         Category::Tolerated => {
-            write_changed_body(out, entry);
+            write_changed_body(out, entry, src);
             out.push_str(
                 "<p class=\"inline-note\">Within the allowed difference ratio, so it does not fail the run.</p>",
             );
         }
         Category::SizeMismatch => {
             out.push_str("<div class=\"grid3\" style=\"grid-template-columns:1fr 1fr\">");
-            pane(out, "expected", entry.images.expected.as_deref());
-            pane(out, "actual", entry.images.actual.as_deref());
+            pane(out, "expected", src(entry, Side::Expected));
+            pane(out, "actual", src(entry, Side::Actual));
             out.push_str(
                 "</div><p class=\"inline-note\">Dimensions differ, so no diff was computed.</p>",
             );
         }
-        Category::Added => single(out, "actual", entry.images.actual.as_deref()),
-        Category::Removed => single(out, "expected", entry.images.expected.as_deref()),
+        Category::Added => single(out, "actual", src(entry, Side::Actual)),
+        Category::Removed => single(out, "expected", src(entry, Side::Expected)),
         Category::Matched => {
-            single(out, "expected = actual", entry.images.expected.as_deref());
+            single(out, "expected = actual", src(entry, Side::Expected));
             out.push_str(
                 "<p class=\"inline-note\">Identical within the threshold, so expected and actual are the same image.</p>",
             );
@@ -189,7 +197,11 @@ fn write_body(out: &mut String, entry: &Entry) {
     }
 }
 
-fn write_changed_body(out: &mut String, entry: &Entry) {
+fn write_changed_body(
+    out: &mut String,
+    entry: &Entry,
+    src: &dyn Fn(&Entry, Side) -> Option<String>,
+) {
     out.push_str(
         "<div class=\"viewer-bar\"><div class=\"seg\" role=\"tablist\">\
          <button aria-pressed=\"true\" data-mode=\"diff\">Diff</button>\
@@ -200,15 +212,15 @@ fn write_changed_body(out: &mut String, entry: &Entry) {
     );
 
     out.push_str("<div class=\"stage\" data-mode=\"diff\"><div class=\"pane m-diff\"><span class=\"cap\">diff</span>");
-    img(out, entry.images.diff.as_deref(), "diff");
+    img(out, src(entry, Side::Diff).as_deref(), "diff");
     write_cluster_rects(out, entry);
     out.push_str("</div><div class=\"grid3 m-side\">");
-    pane(out, "expected", entry.images.expected.as_deref());
-    pane(out, "actual", entry.images.actual.as_deref());
+    pane(out, "expected", src(entry, Side::Expected));
+    pane(out, "actual", src(entry, Side::Actual));
     out.push_str("</div><div class=\"pane stack m-overlay\"><div class=\"base\">");
-    img(out, entry.images.expected.as_deref(), "expected");
+    img(out, src(entry, Side::Expected).as_deref(), "expected");
     out.push_str("</div><div class=\"layer top\">");
-    img(out, entry.images.actual.as_deref(), "actual");
+    img(out, src(entry, Side::Actual).as_deref(), "actual");
     out.push_str("</div><div class=\"handle\"></div></div></div>");
 
     write_clusters(out, &entry.clusters);
@@ -306,29 +318,34 @@ fn ssim_cell(ssim: Option<f64>) -> String {
     }
 }
 
-fn single(out: &mut String, cap: &str, png: Option<&[u8]>) {
+fn single(out: &mut String, cap: &str, url: Option<String>) {
     out.push_str("<div class=\"single\">");
-    pane(out, cap, png);
+    pane(out, cap, url);
     out.push_str("</div>");
 }
 
-fn pane(out: &mut String, cap: &str, png: Option<&[u8]>) {
+fn pane(out: &mut String, cap: &str, url: Option<String>) {
     write!(
         out,
         "<div class=\"pane\"><span class=\"cap\">{}</span>",
         escape(cap)
     )
     .unwrap();
-    img(out, png, cap);
+    img(out, url.as_deref(), cap);
     out.push_str("</div>");
 }
 
-fn img(out: &mut String, png: Option<&[u8]>, alt: &str) {
-    if let Some(bytes) = png {
+/// Writes one image tag.
+///
+/// The URL is escaped as well as the alt text: it comes from the caller's
+/// `src` callback, which is not bound to answer with something that already
+/// escapes the attribute metacharacters.
+fn img(out: &mut String, url: Option<&str>, alt: &str) {
+    if let Some(url) = url {
         write!(
             out,
-            "<img src=\"data:image/png;base64,{}\" alt=\"{}\">",
-            base64(bytes),
+            "<img src=\"{}\" alt=\"{}\" loading=\"lazy\">",
+            escape(url),
             escape(alt),
         )
         .unwrap();
@@ -406,31 +423,47 @@ fn escape(text: &str) -> String {
     out
 }
 
-/// Standard base64 of the bytes.
-fn base64(bytes: &[u8]) -> String {
-    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
-    for chunk in bytes.chunks(3) {
-        let b = [
-            chunk[0],
-            *chunk.get(1).unwrap_or(&0),
-            *chunk.get(2).unwrap_or(&0),
-        ];
-        let n = (u32::from(b[0]) << 16) | (u32::from(b[1]) << 8) | u32::from(b[2]);
-        out.push(ALPHABET[(n >> 18 & 63) as usize] as char);
-        out.push(ALPHABET[(n >> 12 & 63) as usize] as char);
-        out.push(if chunk.len() > 1 {
-            ALPHABET[(n >> 6 & 63) as usize] as char
-        } else {
-            '='
-        });
-        out.push(if chunk.len() > 2 {
-            ALPHABET[(n & 63) as usize] as char
-        } else {
-            '='
-        });
+/// Filesystem path of one image below the report directory.
+///
+/// `path` is the entry's relative path, already ending in `.png`. Not
+/// percent-encoded: callers writing the file to disk want the raw path.
+pub fn asset_path(path: &str, side: Side) -> String {
+    let dir = match side {
+        Side::Expected => "expected",
+        Side::Actual => "actual",
+        Side::Diff => "diff",
+    };
+    format!("images/{dir}/{path}")
+}
+
+/// Percent-encodes a relative path for use in an HTML attribute.
+///
+/// Every byte outside `A-Za-z0-9-._~` and `/` becomes `%XX`, uppercase hex,
+/// taken from the UTF-8 encoding one byte at a time. Screenshot names come
+/// from whatever the caller named the file, and can hold spaces and
+/// non-ASCII characters.
+pub fn url_path(path: &str) -> String {
+    let mut out = String::with_capacity(path.len());
+    for byte in path.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' | b'/' => {
+                out.push(byte as char);
+            }
+            _ => write!(out, "%{byte:02X}").unwrap(),
+        }
     }
     out
+}
+
+/// Resolves images for a report whose files sit below its own directory, at
+/// the paths [`asset_path`] describes.
+pub fn local_assets(entry: &Entry, side: Side) -> Option<String> {
+    let held = match side {
+        Side::Expected => entry.images.expected.is_some(),
+        Side::Actual => entry.images.actual.is_some(),
+        Side::Diff => entry.images.diff.is_some(),
+    };
+    held.then(|| url_path(&asset_path(&entry.path, side)))
 }
 
 const CHEVRON: &str = "<svg class=\"chev\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\" fill=\"none\"><path d=\"M6 4l4 4-4 4\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg>";

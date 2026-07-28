@@ -4,9 +4,10 @@
 //! is the same for every backend:
 //!
 //! ```text
-//! <root>/<key>/manifest.json    files the snapshot holds
-//! <root>/<key>/images/<path>    the PNGs, at their relative paths
+//! <root>/<key>/manifest.json           files the snapshot holds
+//! <root>/<key>/images/<path>           the PNGs, at their relative paths
 //! <root>/<key>/report/index.html
+//! <root>/<key>/report/images/diff/<path>   diff images the report references
 //! ```
 //!
 //! A key counts as present when its `manifest.json` is present, which is one
@@ -198,11 +199,24 @@ impl Storage {
         Ok(None)
     }
 
-    /// Stores the HTML report for `key`.
+    /// Stores the HTML report for `key`, along with the images it references.
+    ///
+    /// Each entry in `images` is a path below `<key>/report/` (for example
+    /// `images/diff/foo.png`) and its bytes. The images are written first and
+    /// `index.html` last, so a write that stopped halfway does not read as a
+    /// complete report.
     ///
     /// Returns a URL when the backend can serve one.
-    pub fn store_report(&self, key: &str, html: &[u8]) -> Result<Option<String>, StorageError> {
+    pub fn store_report(
+        &self,
+        key: &str,
+        html: &[u8],
+        images: &[(String, &[u8])],
+    ) -> Result<Option<String>, StorageError> {
         validate_key(key)?;
+        for (rel, bytes) in images {
+            self.put_object(&format!("{key}/report/{rel}"), bytes)?;
+        }
         let path = format!("{key}/report/index.html");
         self.put_object(&path, html)?;
         Ok(self.object_url(&path))
