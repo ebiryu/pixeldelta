@@ -93,7 +93,10 @@ impl S3 {
             "HEAD" => self.agent.head(&url),
             "GET" => self.agent.get(&url),
             _ => {
-                let mut request = self.agent.put(&url);
+                let mut request = self
+                    .agent
+                    .put(&url)
+                    .header("content-type", content_type(path));
                 for (name, value) in &headers {
                     request = request.header(name, value);
                 }
@@ -145,6 +148,19 @@ impl S3 {
             Some(_) => format!("/{}/{}", self.config.bucket, self.object_key(path)),
             None => format!("/{}", self.object_key(path)),
         }
+    }
+}
+
+/// Media type an object is stored under, taken from the extension of its path.
+///
+/// An object stored without one comes back as `binary/octet-stream`, which a
+/// browser downloads rather than renders.
+fn content_type(path: &str) -> &'static str {
+    match path.rsplit_once('.') {
+        Some((_, "html")) => "text/html; charset=utf-8",
+        Some((_, "png")) => "image/png",
+        Some((_, "json")) => "application/json",
+        _ => "application/octet-stream",
     }
 }
 

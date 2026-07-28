@@ -141,6 +141,38 @@ fn a_stored_report_answers_with_its_url() {
     );
 }
 
+/// Without a type the service stores the object as binary, and the browser
+/// downloads the report instead of showing it.
+#[test]
+fn a_put_carries_the_type_of_what_it_stores() {
+    let dir = tempfile::tempdir().expect("a temporary directory");
+    std::fs::write(dir.path().join("a.png"), b"a").expect("the file is written");
+    let stub = Stub::start(vec![
+        Reply::status(200),
+        Reply::status(200),
+        Reply::status(200),
+    ]);
+    let storage = Storage::s3(config(&stub.url()));
+
+    storage
+        .store("abc123", dir.path())
+        .expect("the snapshot is stored");
+    storage
+        .store_report("abc123", b"<html></html>")
+        .expect("the report is stored");
+
+    let requests = stub.requests();
+    let types: Vec<Option<&str>> = requests.iter().map(|r| r.header("content-type")).collect();
+    assert_eq!(
+        types,
+        vec![
+            Some("image/png"),
+            Some("application/json"),
+            Some("text/html; charset=utf-8"),
+        ]
+    );
+}
+
 #[test]
 fn a_refused_request_is_an_error() {
     let stub = Stub::start(vec![Reply::status(403)]);
