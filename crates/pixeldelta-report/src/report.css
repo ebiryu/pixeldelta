@@ -14,6 +14,7 @@
   --size: #d43a3f; --size-bg: #fbe6e7;
   --added: #2f6fdb; --added-bg: #e6eefb;
   --removed: #8a56c9; --removed-bg: #f0e9fa;
+  --tolerated: #5c6572; --tolerated-bg: #e9ecf1;
   --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Menlo", monospace;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --radius: 10px;
@@ -27,6 +28,7 @@
     --matched: #4bbf63; --matched-bg: #16281c; --changed: #e0a63a; --changed-bg: #2c2413;
     --size: #f2646a; --size-bg: #2e1618; --added: #66a0ff; --added-bg: #14213b;
     --removed: #b98cf0; --removed-bg: #221a34;
+    --tolerated: #939dab; --tolerated-bg: #20262f;
     --shadow: 0 1px 2px rgba(0,0,0,.3), 0 6px 18px rgba(0,0,0,.28);
   }
 }
@@ -37,6 +39,7 @@
   --matched: #2f9e44; --matched-bg: #e7f4ea; --changed: #b5791a; --changed-bg: #f8efdc;
   --size: #d43a3f; --size-bg: #fbe6e7; --added: #2f6fdb; --added-bg: #e6eefb;
   --removed: #8a56c9; --removed-bg: #f0e9fa;
+  --tolerated: #5c6572; --tolerated-bg: #e9ecf1;
   --shadow: 0 1px 2px rgba(20,28,40,.06), 0 4px 14px rgba(20,28,40,.05);
 }
 :root[data-theme="dark"] {
@@ -46,6 +49,7 @@
   --matched: #4bbf63; --matched-bg: #16281c; --changed: #e0a63a; --changed-bg: #2c2413;
   --size: #f2646a; --size-bg: #2e1618; --added: #66a0ff; --added-bg: #14213b;
   --removed: #b98cf0; --removed-bg: #221a34;
+  --tolerated: #939dab; --tolerated-bg: #20262f;
   --shadow: 0 1px 2px rgba(0,0,0,.3), 0 6px 18px rgba(0,0,0,.28);
 }
 
@@ -93,6 +97,7 @@ body {
 .chip.c-added .swatch { background: var(--added); }
 .chip.c-removed .swatch { background: var(--removed); }
 .chip.c-size .swatch { background: var(--size); }
+.chip.c-tolerated .swatch { background: var(--tolerated); }
 .chip.c-matched .swatch { background: var(--matched); }
 
 .params {
@@ -112,6 +117,7 @@ body {
 .entry.size .stripe { background: var(--size); }
 .entry.added .stripe { background: var(--added); }
 .entry.removed .stripe { background: var(--removed); }
+.entry.tolerated .stripe { background: var(--tolerated); }
 .entry.matched .stripe { background: var(--matched); }
 
 .path { font-family: var(--mono); font-size: 13.5px; color: var(--text); word-break: break-all; }
@@ -124,6 +130,7 @@ body {
 .badge.size { background: var(--size-bg); color: var(--size); }
 .badge.added { background: var(--added-bg); color: var(--added); }
 .badge.removed { background: var(--removed-bg); color: var(--removed); }
+.badge.tolerated { background: var(--tolerated-bg); color: var(--tolerated); }
 .badge.matched { background: var(--matched-bg); color: var(--matched); }
 .metrics { margin-left: auto; display: flex; gap: 18px; align-items: baseline; flex: none; }
 .metric { text-align: right; }

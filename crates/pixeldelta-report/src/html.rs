@@ -42,6 +42,13 @@ pub fn html(report: &Report) -> String {
     chip(&mut out, "added", "c-added", summary.added, true);
     chip(&mut out, "removed", "c-removed", summary.removed, true);
     chip(&mut out, "size", "c-size", summary.size_mismatch, true);
+    chip(
+        &mut out,
+        "tolerated",
+        "c-tolerated",
+        summary.tolerated,
+        true,
+    );
     chip(&mut out, "matched", "c-matched", summary.matched, false);
     out.push_str("</div>");
 
@@ -50,11 +57,13 @@ pub fn html(report: &Report) -> String {
         concat!(
             "<div class=\"params\">",
             "<span><b>threshold</b> {threshold:.2}</span>",
+            "<span><b>tolerance</b> {tolerance}</span>",
             "<span><b>antialiasing</b> {aa}</span>",
             "<span><b>layout-shift</b> {shift}</span>",
             "</div></div></header>\n",
         ),
         threshold = report.threshold,
+        tolerance = report.tolerance_ratio,
         aa = on_off(report.antialiasing),
         shift = on_off(report.layout_shift),
     )
@@ -80,7 +89,8 @@ fn rank(category: Category) -> u8 {
         Category::SizeMismatch => 1,
         Category::Added => 2,
         Category::Removed => 3,
-        Category::Matched => 4,
+        Category::Tolerated => 4,
+        Category::Matched => 5,
     }
 }
 
@@ -126,7 +136,7 @@ fn write_entry(out: &mut String, entry: &Entry, open: bool) {
 
 fn write_metrics(out: &mut String, entry: &Entry) {
     match entry.category {
-        Category::Changed => {
+        Category::Changed | Category::Tolerated => {
             metric(out, &group(entry.diff_pixels), "diff px");
             metric(out, &format!("{:.2}%", entry.diff_ratio * 100.0), "ratio");
             metric(out, &entry.clusters.len().to_string(), "clusters");
@@ -154,6 +164,12 @@ fn metric(out: &mut String, value: &str, key: &str) {
 fn write_body(out: &mut String, entry: &Entry) {
     match entry.category {
         Category::Changed => write_changed_body(out, entry),
+        Category::Tolerated => {
+            write_changed_body(out, entry);
+            out.push_str(
+                "<p class=\"inline-note\">Within the allowed difference ratio, so it does not fail the run.</p>",
+            );
+        }
         Category::SizeMismatch => {
             out.push_str("<div class=\"grid3\" style=\"grid-template-columns:1fr 1fr\">");
             pane(out, "expected", entry.images.expected.as_deref());
@@ -325,6 +341,7 @@ fn data_cat(category: Category) -> &'static str {
         Category::SizeMismatch => "size",
         Category::Added => "added",
         Category::Removed => "removed",
+        Category::Tolerated => "tolerated",
         Category::Matched => "matched",
     }
 }
@@ -335,6 +352,7 @@ fn badge_label(category: Category) -> &'static str {
         Category::SizeMismatch => "size mismatch",
         Category::Added => "added",
         Category::Removed => "removed",
+        Category::Tolerated => "tolerated",
         Category::Matched => "matched",
     }
 }

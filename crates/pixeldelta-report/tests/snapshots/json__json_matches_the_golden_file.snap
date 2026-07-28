@@ -1,14 +1,15 @@
 ---
 source: crates/pixeldelta-report/tests/json.rs
-assertion_line: 9
 expression: "json(&sample::sample_report())"
 ---
 {
   "threshold": 0.1,
+  "toleranceRatio": 0.001,
   "antialiasing": true,
   "layoutShift": true,
   "summary": {
     "matched": 1,
+    "tolerated": 1,
     "changed": 1,
     "sizeMismatch": 1,
     "added": 1,
@@ -72,6 +73,22 @@ expression: "json(&sample::sample_report())"
       "diffPixels": 0,
       "diffRatio": 0.0,
       "clusters": []
+    },
+    {
+      "path": "components/badge.png",
+      "category": "tolerated",
+      "diffPixels": 12,
+      "diffRatio": 0.0007,
+      "clusters": [
+        {
+          "x": 4,
+          "y": 6,
+          "width": 10,
+          "height": 6,
+          "diffPixels": 12,
+          "ssim": 0.995
+        }
+      ]
     },
     {
       "path": "components/checkbox.png",

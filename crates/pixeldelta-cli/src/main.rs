@@ -66,6 +66,9 @@ struct RunArgs {
     /// Count anti-aliasing differences instead of excluding them.
     #[arg(long)]
     no_antialiasing: bool,
+    /// Fraction of an image's pixels that may differ and still pass, in [0, 1].
+    #[arg(long, default_value_t = 0.0)]
+    tolerance_ratio: f64,
 }
 
 #[derive(Args)]
@@ -110,6 +113,9 @@ struct CiArgs {
     /// Count anti-aliasing differences instead of excluding them.
     #[arg(long)]
     no_antialiasing: bool,
+    /// Fraction of an image's pixels that may differ and still pass, in [0, 1].
+    #[arg(long, default_value_t = 0.0)]
+    tolerance_ratio: f64,
 }
 
 fn main() -> ExitCode {
@@ -149,6 +155,7 @@ fn run_ci(args: CiArgs) -> ExitCode {
         history_limit: args.history_limit,
         threshold: args.threshold,
         antialiasing: !args.no_antialiasing,
+        tolerance_ratio: args.tolerance_ratio,
         report: args.report.as_deref(),
         json: args.json.as_deref(),
         junit: args.junit.as_deref(),
@@ -170,13 +177,14 @@ fn run_ci(args: CiArgs) -> ExitCode {
     };
 
     println!(
-        "{} against {}: {} changed, {} added, {} removed, {} size mismatch, {} matched",
+        "{} against {}: {} changed, {} added, {} removed, {} size mismatch, {} tolerated, {} matched",
         if summary.passed { "pass" } else { "fail" },
         run.baseline.as_deref().unwrap_or_default(),
         summary.changed,
         summary.added,
         summary.removed,
         summary.size_mismatch,
+        summary.tolerated,
         summary.matched,
     );
     if let Some(url) = run.report_url {
@@ -228,6 +236,7 @@ fn run(args: RunArgs) -> ExitCode {
         &args.actual,
         args.threshold,
         !args.no_antialiasing,
+        args.tolerance_ratio,
     ) {
         Ok(report) => report,
         Err(error) => {
@@ -248,12 +257,13 @@ fn run(args: RunArgs) -> ExitCode {
 
     let summary = report.summary();
     println!(
-        "{}: {} changed, {} added, {} removed, {} size mismatch, {} matched",
+        "{}: {} changed, {} added, {} removed, {} size mismatch, {} tolerated, {} matched",
         if summary.passed { "pass" } else { "fail" },
         summary.changed,
         summary.added,
         summary.removed,
         summary.size_mismatch,
+        summary.tolerated,
         summary.matched,
     );
     ExitCode::from(if summary.passed { 0 } else { 1 })

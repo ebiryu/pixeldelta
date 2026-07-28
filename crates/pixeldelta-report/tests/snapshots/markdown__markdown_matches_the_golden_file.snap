@@ -1,6 +1,6 @@
 ---
 source: crates/pixeldelta-report/tests/markdown.rs
-expression: "markdown(&sample::sample_report(), Some(\"5046eb28\"))"
+expression: "markdown(&sample::sample_report(), \"5046eb28\")"
 ---
 <!-- pixeldelta -->
 ### pixeldelta: 1 changed, 1 added, 1 removed, 1 size mismatch
@@ -11,9 +11,10 @@ expression: "markdown(&sample::sample_report(), Some(\"5046eb28\"))"
 | added | 1 |
 | removed | 1 |
 | size mismatch | 1 |
+| tolerated | 1 |
 | matched | 1 |
 
-Compared against `5046eb28` with threshold 0.1, anti-aliasing excluded.
+Compared against `5046eb28` with threshold 0.1, anti-aliasing excluded, tolerance 0.001.
 
 #### changed
 

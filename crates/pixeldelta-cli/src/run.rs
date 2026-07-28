@@ -13,12 +13,15 @@ use crate::CliError;
 ///
 /// Clustering, the layout-shift search and the diff image are always on: the
 /// report shows where each difference sits, whether it moved, and the diff
-/// image. `threshold` and `antialiasing` come from the caller.
+/// image. `threshold` and `antialiasing` come from the caller. `tolerance_ratio`
+/// is the fraction of an image's pixels that may differ and still count as
+/// `tolerated` rather than `changed`.
 pub fn run_dirs(
     expected: &Path,
     actual: &Path,
     threshold: f32,
     antialiasing: bool,
+    tolerance_ratio: f64,
 ) -> Result<Report, CliError> {
     let expected_files = collect_pngs(expected)?;
     let actual_files = collect_pngs(actual)?;
@@ -37,7 +40,13 @@ pub fn run_dirs(
         let in_expected = expected_files.contains(rel);
         let in_actual = actual_files.contains(rel);
         let entry = match (in_expected, in_actual) {
-            (true, true) => compare_pair(rel, &expected.join(rel), &actual.join(rel), &opts)?,
+            (true, true) => compare_pair(
+                rel,
+                &expected.join(rel),
+                &actual.join(rel),
+                &opts,
+                tolerance_ratio,
+            )?,
             (false, true) => only_one(rel, &actual.join(rel), Category::Added)?,
             (true, false) => only_one(rel, &expected.join(rel), Category::Removed)?,
             (false, false) => unreachable!("a path came from one of the two sets"),
@@ -49,6 +58,7 @@ pub fn run_dirs(
         threshold,
         antialiasing,
         layout_shift: true,
+        tolerance_ratio,
         entries,
     })
 }
@@ -59,6 +69,7 @@ fn compare_pair(
     expected_path: &Path,
     actual_path: &Path,
     opts: &CompareOptions,
+    tolerance_ratio: f64,
 ) -> Result<Entry, CliError> {
     let expected_bytes =
         std::fs::read(expected_path).map_err(|source| read_error(expected_path, source))?;
@@ -111,9 +122,16 @@ fn compare_pair(
         .diff_image
         .expect("the diff image was requested for the comparison");
     let diff_png = encode_png(diff.width, diff.height, &diff.data)?;
+    // An entry within the allowed ratio still keeps its diff image and
+    // clusters: the report shows what changed even though it does not fail.
+    let category = if tolerance_ratio > 0.0 && result.diff_ratio <= tolerance_ratio {
+        Category::Tolerated
+    } else {
+        Category::Changed
+    };
     Ok(Entry {
         path: rel.to_owned(),
-        category: Category::Changed,
+        category,
         diff_pixels: result.diff_pixels,
         diff_ratio: result.diff_ratio,
         clusters: result.clusters.iter().map(to_cluster).collect(),

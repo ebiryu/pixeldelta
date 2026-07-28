@@ -15,6 +15,17 @@ fn png(color: [u8; 4], width: u32) -> Vec<u8> {
     encode_png(width, 1, &rgba).expect("the row encodes")
 }
 
+/// A one-row PNG of the given width, all `rest` except for the first pixel,
+/// which is `first`. Used to produce a small, known diff ratio.
+fn png_with_one_diff(first: [u8; 4], rest: [u8; 4], width: u32) -> Vec<u8> {
+    let mut rgba = Vec::new();
+    rgba.extend_from_slice(&first);
+    for _ in 1..width {
+        rgba.extend_from_slice(&rest);
+    }
+    encode_png(width, 1, &rgba).expect("the row encodes")
+}
+
 fn write(path: &Path, bytes: &[u8]) {
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(path, bytes).unwrap();
@@ -58,6 +69,7 @@ fn every_pairing_lands_in_the_right_category() {
         &dir.path().join("actual"),
         0.1,
         true,
+        0.0,
     )
     .expect("the run finishes");
 
@@ -87,6 +99,7 @@ fn a_changed_entry_carries_its_diff_image_and_clusters() {
         &dir.path().join("actual"),
         0.1,
         true,
+        0.0,
     )
     .expect("the run finishes");
 
@@ -109,8 +122,34 @@ fn matching_directories_pass() {
     write(&e.join("a.png"), &png([9, 9, 9, 255], 4));
     write(&a.join("a.png"), &png([9, 9, 9, 255], 4));
 
-    let report = run_dirs(&e, &a, 0.1, true).expect("the run finishes");
+    let report = run_dirs(&e, &a, 0.1, true, 0.0).expect("the run finishes");
     assert!(report.summary().passed);
+}
+
+#[test]
+fn a_small_difference_is_tolerated_when_the_ratio_allows_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let (e, a) = (dir.path().join("expected"), dir.path().join("actual"));
+    let width = 1000;
+    write(&e.join("a.png"), &png([10, 10, 10, 255], width));
+    write(
+        &a.join("a.png"),
+        &png_with_one_diff([200, 0, 0, 255], [10, 10, 10, 255], width),
+    );
+
+    let tolerated =
+        run_dirs(&e, &a, 0.1, true, 0.01).expect("the run finishes with the ratio allowed");
+    assert_eq!(
+        category_of(&tolerated.entries, "a.png"),
+        &Category::Tolerated
+    );
+    assert_eq!(tolerated.summary().tolerated, 1);
+    assert_eq!(tolerated.summary().changed, 0);
+    assert!(tolerated.summary().passed);
+
+    let changed = run_dirs(&e, &a, 0.1, true, 0.0).expect("the run finishes with no tolerance");
+    assert_eq!(category_of(&changed.entries, "a.png"), &Category::Changed);
+    assert!(!changed.summary().passed);
 }
 
 #[test]
@@ -122,6 +161,7 @@ fn write_report_emits_the_requested_files() {
         &dir.path().join("actual"),
         0.1,
         true,
+        0.0,
     )
     .unwrap();
 

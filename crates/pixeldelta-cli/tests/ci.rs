@@ -202,6 +202,7 @@ fn options<'a>(repo: &'a Path, actual: &'a Path, storage: &'a Storage) -> CiOpti
         history_limit: 50,
         threshold: 0.1,
         antialiasing: true,
+        tolerance_ratio: 0.0,
         report: None,
         json: None,
         junit: None,

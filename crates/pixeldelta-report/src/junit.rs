@@ -4,12 +4,13 @@ use crate::{Category, Entry, Report};
 
 /// Renders the report as JUnit XML.
 ///
-/// Each entry is a `testcase`; every category but `matched` is a `failure`, so
-/// a CI runner that reads JUnit fails the build on any difference and names the
-/// path that caused it.
+/// Each entry is a `testcase`; every category but `matched` and `tolerated` is
+/// a `failure`, so a CI runner that reads JUnit fails the build on any
+/// unallowed difference and names the path that caused it.
 pub fn junit(report: &Report) -> String {
-    // Every entry that did not match is a failure.
-    let failures = report.entries.len() as u32 - report.summary().matched;
+    // Every entry that neither matched nor was tolerated is a failure.
+    let summary = report.summary();
+    let failures = report.entries.len() as u32 - summary.matched - summary.tolerated;
 
     let mut out = String::new();
     out.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
@@ -39,7 +40,7 @@ pub fn junit(report: &Report) -> String {
 /// The failure line for an entry, or `None` when it matched.
 fn failure_message(entry: &Entry) -> Option<String> {
     match entry.category {
-        Category::Matched => None,
+        Category::Matched | Category::Tolerated => None,
         Category::Changed => Some(format!(
             "changed: {} pixels ({:.4}%)",
             entry.diff_pixels,

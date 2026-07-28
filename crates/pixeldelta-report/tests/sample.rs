@@ -7,6 +7,7 @@ pub fn sample_report() -> Report {
         threshold: 0.1,
         antialiasing: true,
         layout_shift: true,
+        tolerance_ratio: 0.001,
         entries: vec![
             Entry {
                 path: "components/button/primary.png".into(),
@@ -85,6 +86,29 @@ pub fn sample_report() -> Report {
                     expected: Some(b"EXPECTED-PNG".to_vec()),
                     actual: None,
                     diff: None,
+                },
+            },
+            Entry {
+                path: "components/badge.png".into(),
+                category: Category::Tolerated,
+                diff_pixels: 12,
+                diff_ratio: 0.0007,
+                clusters: vec![Cluster {
+                    x: 4,
+                    y: 6,
+                    width: 10,
+                    height: 6,
+                    diff_pixels: 12,
+                    displacement: None,
+                    ssim: Some(0.995),
+                }],
+                image_size: Some([320, 200]),
+                expected_size: None,
+                actual_size: None,
+                images: Images {
+                    expected: Some(b"EXPECTED-PNG".to_vec()),
+                    actual: Some(b"ACTUAL-PNG".to_vec()),
+                    diff: Some(b"DIFF-PNG".to_vec()),
                 },
             },
             Entry {

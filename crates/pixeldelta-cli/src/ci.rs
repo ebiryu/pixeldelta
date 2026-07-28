@@ -26,6 +26,9 @@ pub struct CiOptions<'a> {
     pub threshold: f32,
     /// Whether anti-aliasing differences are excluded.
     pub antialiasing: bool,
+    /// Fraction of an image's pixels that may differ and still count as
+    /// tolerated rather than changed.
+    pub tolerance_ratio: f64,
     /// Write the HTML report into this directory as index.html.
     pub report: Option<&'a Path>,
     /// Write the JSON report to this path.
@@ -88,6 +91,7 @@ pub fn ci(opts: &CiOptions) -> Result<CiRun, CliError> {
         opts.actual,
         opts.threshold,
         opts.antialiasing,
+        opts.tolerance_ratio,
     )?;
     write_report(&report, None, opts.json, opts.junit)?;
 

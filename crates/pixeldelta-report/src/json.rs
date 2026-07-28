@@ -7,6 +7,7 @@ use crate::{Entry, Report};
 #[serde(rename_all = "camelCase")]
 struct JsonReport<'a> {
     threshold: f32,
+    tolerance_ratio: f64,
     antialiasing: bool,
     layout_shift: bool,
     summary: crate::Summary,
@@ -18,6 +19,7 @@ struct JsonReport<'a> {
 pub fn json(report: &Report) -> String {
     let view = JsonReport {
         threshold: report.threshold,
+        tolerance_ratio: report.tolerance_ratio,
         antialiasing: report.antialiasing,
         layout_shift: report.layout_shift,
         summary: report.summary(),

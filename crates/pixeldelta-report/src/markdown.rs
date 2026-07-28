@@ -41,15 +41,16 @@ pub fn markdown(report: &Report, baseline: &str) -> String {
         ("added", summary.added),
         ("removed", summary.removed),
         ("size mismatch", summary.size_mismatch),
+        ("tolerated", summary.tolerated),
         ("matched", summary.matched),
     ] {
         let _ = writeln!(out, "| {name} | {count} |");
     }
 
     out.push('\n');
-    let _ = writeln!(
+    let _ = write!(
         out,
-        "Compared against `{baseline}` with threshold {}, anti-aliasing {}.",
+        "Compared against `{baseline}` with threshold {}, anti-aliasing {}",
         report.threshold,
         if report.antialiasing {
             "excluded"
@@ -57,6 +58,10 @@ pub fn markdown(report: &Report, baseline: &str) -> String {
             "counted"
         },
     );
+    if report.tolerance_ratio > 0.0 {
+        let _ = write!(out, ", tolerance {}", report.tolerance_ratio);
+    }
+    out.push_str(".\n");
 
     changed_table(&mut out, report);
     path_list(&mut out, report, Category::SizeMismatch, "size mismatch");

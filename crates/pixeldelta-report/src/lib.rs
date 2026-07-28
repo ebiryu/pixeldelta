@@ -24,6 +24,8 @@ pub use markdown::{markdown, MARKER};
 pub enum Category {
     /// In both directories and equal within the threshold.
     Matched,
+    /// In both directories, with differences within the allowed ratio.
+    Tolerated,
     /// In both directories with differences.
     Changed,
     /// In both directories but of different dimensions.
@@ -94,6 +96,9 @@ pub struct Report {
     pub threshold: f32,
     pub antialiasing: bool,
     pub layout_shift: bool,
+    /// The ratio of differing pixels the run allowed before an entry counted
+    /// as changed.
+    pub tolerance_ratio: f64,
     pub entries: Vec<Entry>,
 }
 
@@ -102,6 +107,7 @@ pub struct Report {
 #[serde(rename_all = "camelCase")]
 pub struct Summary {
     pub matched: u32,
+    pub tolerated: u32,
     pub changed: u32,
     pub size_mismatch: u32,
     pub added: u32,
@@ -115,6 +121,7 @@ impl Report {
     pub fn summary(&self) -> Summary {
         let mut s = Summary {
             matched: 0,
+            tolerated: 0,
             changed: 0,
             size_mismatch: 0,
             added: 0,
@@ -124,6 +131,7 @@ impl Report {
         for entry in &self.entries {
             match entry.category {
                 Category::Matched => s.matched += 1,
+                Category::Tolerated => s.tolerated += 1,
                 Category::Changed => s.changed += 1,
                 Category::SizeMismatch => s.size_mismatch += 1,
                 Category::Added => s.added += 1,
@@ -132,5 +140,45 @@ impl Report {
         }
         s.passed = s.changed == 0 && s.size_mismatch == 0 && s.added == 0 && s.removed == 0;
         s
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn entry(path: &str, category: Category) -> Entry {
+        Entry {
+            path: path.to_owned(),
+            category,
+            diff_pixels: 0,
+            diff_ratio: 0.0,
+            clusters: Vec::new(),
+            expected_size: None,
+            actual_size: None,
+            image_size: None,
+            images: Images::default(),
+        }
+    }
+
+    #[test]
+    fn summary_counts_tolerated_entries_and_still_passes() {
+        let report = Report {
+            threshold: 0.1,
+            antialiasing: true,
+            layout_shift: true,
+            tolerance_ratio: 0.05,
+            entries: vec![
+                entry("a.png", Category::Matched),
+                entry("b.png", Category::Tolerated),
+            ],
+        };
+
+        let summary = report.summary();
+
+        assert_eq!(summary.matched, 1);
+        assert_eq!(summary.tolerated, 1);
+        assert_eq!(summary.changed, 0);
+        assert!(summary.passed);
     }
 }
