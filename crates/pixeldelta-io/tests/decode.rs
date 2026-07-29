@@ -118,6 +118,28 @@ fn a_transparent_palette_entry_keeps_its_alpha() {
 }
 
 #[test]
+fn a_palette_that_is_not_whole_entries_is_reported_rather_than_panicking() {
+    // Seven bytes: two entries and one byte over. The decoder expands a palette
+    // three bytes at a time and indexes past the end on the leftover byte.
+    let png = encode(
+        2,
+        1,
+        png::ColorType::Indexed,
+        png::BitDepth::Eight,
+        Some(vec![10, 20, 30, 40, 50, 60, 70]),
+        None,
+        &[0, 1],
+    );
+
+    let error = decode(&png).expect_err("the palette is rejected");
+
+    assert!(
+        matches!(&error, DecodeError::Malformed { message } if message.contains("7 bytes")),
+        "unexpected error: {error}"
+    );
+}
+
+#[test]
 fn sixteen_bit_channels_keep_their_high_byte() {
     // 0x1234 and 0xabcd per channel, big endian as PNG stores them.
     let png = encode(

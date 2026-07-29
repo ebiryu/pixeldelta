@@ -5,6 +5,9 @@ use crate::{DecodeError, Decoded};
 /// Number of bytes per pixel in the RGBA8 layout the engine works on.
 const BYTES_PER_PIXEL: usize = 4;
 
+/// Number of bytes a palette entry occupies in a PLTE chunk.
+const PALETTE_ENTRY: usize = 3;
+
 /// Decodes a PNG into RGBA8.
 ///
 /// The palette, grayscale and 16-bit variants all reach the engine as RGBA8:
@@ -18,6 +21,9 @@ pub fn decode(bytes: &[u8]) -> Result<Decoded, DecodeError> {
     let mut decoder = png::Decoder::new(std::io::Cursor::new(bytes));
     decoder.set_transformations(Transformations::normalize_to_color8() | Transformations::ALPHA);
     let mut reader = decoder.read_info().map_err(malformed)?;
+    if let Some(palette) = &reader.info().palette {
+        check_palette(palette.len())?;
+    }
 
     let (width, height) = reader.info().size();
     let mut buffer = vec![
@@ -58,6 +64,24 @@ pub fn decode(bytes: &[u8]) -> Result<Decoded, DecodeError> {
         height: info.height,
         data,
     })
+}
+
+/// Rejects a PLTE chunk whose length cannot describe whole palette entries.
+///
+/// `png` bounds the chunk to 3..=768 bytes but does not require the length to
+/// be a whole number of entries. Expanding the palette then walks it three
+/// bytes at a time and reads past the end on the one or two bytes left over,
+/// which panics, and a panic would reach the Node binding as an aborted
+/// process rather than an exception.
+fn check_palette(len: usize) -> Result<(), DecodeError> {
+    if !len.is_multiple_of(PALETTE_ENTRY) {
+        return Err(DecodeError::Malformed {
+            message: format!(
+                "the palette holds {len} bytes, which is not {PALETTE_ENTRY} per entry"
+            ),
+        });
+    }
+    Ok(())
 }
 
 /// Turns gray-plus-alpha pairs into RGBA quadruples.
