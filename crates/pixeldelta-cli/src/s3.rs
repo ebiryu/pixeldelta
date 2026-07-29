@@ -63,9 +63,9 @@ impl S3 {
                 "{}/{}/{}",
                 endpoint.trim_end_matches('/'),
                 self.config.bucket,
-                self.object_key(path)
+                self.encoded_key(path)
             ),
-            None => format!("https://{}/{}", self.host(), self.object_key(path)),
+            None => format!("https://{}/{}", self.host(), self.encoded_key(path)),
         }
     }
 
@@ -80,7 +80,7 @@ impl S3 {
         let headers = sigv4::sign(
             &sigv4::Request {
                 method,
-                path: &sigv4::encode_path(&self.signed_path(path)),
+                path: &self.signed_path(path),
                 host: &self.host(),
                 region: &self.config.region,
                 body,
@@ -141,12 +141,26 @@ impl S3 {
         }
     }
 
+    /// Object key as it appears in a URL path.
+    ///
+    /// A key holds the name of a compared file, which can carry a space or a
+    /// non-ASCII character. `ureq` parses the URL with `http::Uri`, which
+    /// rejects a non-ASCII byte, so such a key has to be percent-encoded to be
+    /// sent at all.
+    ///
+    /// This is the only place that encodes: the URL and the path the
+    /// signature covers are both built from it, so they cannot disagree, and a
+    /// key is not encoded twice.
+    fn encoded_key(&self, path: &str) -> String {
+        sigv4::encode_path(&self.object_key(path))
+    }
+
     /// Path the signature covers, which holds the bucket when the request goes
     /// to an endpoint rather than to the bucket's own host.
     fn signed_path(&self, path: &str) -> String {
         match &self.config.endpoint {
-            Some(_) => format!("/{}/{}", self.config.bucket, self.object_key(path)),
-            None => format!("/{}", self.object_key(path)),
+            Some(_) => format!("/{}/{}", self.config.bucket, self.encoded_key(path)),
+            None => format!("/{}", self.encoded_key(path)),
         }
     }
 }
@@ -229,5 +243,33 @@ mod tests {
         let s3 = S3::new(config);
 
         assert_eq!(s3.object_key("abc/manifest.json"), "abc/manifest.json");
+    }
+
+    #[test]
+    fn a_non_ascii_name_is_encoded_in_the_url() {
+        let s3 = S3::new(config(None));
+
+        assert_eq!(
+            s3.url("abc/トップ.png"),
+            "https://shots.s3.us-east-1.amazonaws.com/pixeldelta/abc/%E3%83%88%E3%83%83%E3%83%97.png"
+        );
+    }
+
+    /// The signature covers the path the request line carries. `+` is the
+    /// case that passes `http::Uri` unchanged, so an encoding applied to only
+    /// one of the two is read by the service as a bad signature rather than
+    /// as a malformed URL.
+    #[test]
+    fn the_signed_path_and_the_url_carry_the_same_key() {
+        let s3 = S3::new(config(Some("https://example.invalid")));
+
+        assert_eq!(
+            s3.signed_path("abc/a+b.png"),
+            "/shots/pixeldelta/abc/a%2Bb.png"
+        );
+        assert_eq!(
+            s3.url("abc/a+b.png"),
+            "https://example.invalid/shots/pixeldelta/abc/a%2Bb.png"
+        );
     }
 }

@@ -173,6 +173,66 @@ fn a_put_carries_the_type_of_what_it_stores() {
     );
 }
 
+/// Screenshot names come from whatever the caller named the file. A name
+/// outside the unreserved set has to reach the request line percent-encoded:
+/// `http::Uri` rejects a non-ASCII byte, and a `+` sent as it is would
+/// differ from the `%2B` the signature covers.
+#[test]
+fn a_name_outside_the_unreserved_set_is_encoded_in_the_request_line() {
+    let dir = tempfile::tempdir().expect("a temporary directory");
+    std::fs::write(dir.path().join("トップ.png"), b"a").expect("the file is written");
+    std::fs::write(dir.path().join("a+b.png"), b"b").expect("the file is written");
+    let stub = Stub::start(vec![
+        Reply::status(200),
+        Reply::status(200),
+        Reply::status(200),
+    ]);
+    let storage = Storage::s3(config(&stub.url()));
+
+    storage
+        .store("abc123", dir.path())
+        .expect("the snapshot is stored");
+
+    let requests = stub.requests();
+    let targets: Vec<&str> = requests.iter().map(|r| r.target.as_str()).collect();
+    assert_eq!(
+        targets,
+        vec![
+            "/shots/pixeldelta/abc123/images/a%2Bb.png",
+            "/shots/pixeldelta/abc123/images/%E3%83%88%E3%83%83%E3%83%97.png",
+            "/shots/pixeldelta/abc123/manifest.json",
+        ]
+    );
+    assert!(requests.iter().all(|r| r.header("authorization").is_some()));
+}
+
+/// The URL answered for a report is the one its objects were written to.
+#[test]
+fn a_stored_report_answers_with_an_encoded_url() {
+    let stub = Stub::start(vec![Reply::status(200), Reply::status(200)]);
+    let storage = Storage::s3(config(&stub.url()));
+
+    let url = storage
+        .store_report(
+            "abc123",
+            b"<html></html>",
+            &[("トップ.png".to_owned(), &b"a"[..])],
+        )
+        .expect("the report is stored");
+
+    assert_eq!(
+        stub.requests()[0].target,
+        "/shots/pixeldelta/abc123/report/%E3%83%88%E3%83%83%E3%83%97.png"
+    );
+    assert_eq!(
+        url,
+        Some(format!(
+            "{}/shots/pixeldelta/abc123/report/index.html",
+            stub.url()
+        ))
+    );
+}
+
 #[test]
 fn a_refused_request_is_an_error() {
     let stub = Stub::start(vec![Reply::status(403)]);
