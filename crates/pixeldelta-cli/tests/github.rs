@@ -100,13 +100,57 @@ fn a_read_only_token_is_reported_rather_than_failing() {
     assert_eq!(result, Notification::Refused);
 }
 
+/// The comment list is retried on a 5xx, so all 3 attempts have to answer
+/// with one before the request is treated as failed.
 #[test]
 fn an_unexpected_status_is_an_error() {
-    let stub = Stub::start(vec![Reply::status(500)]);
+    let stub = Stub::start(vec![
+        Reply::status(500),
+        Reply::status(500),
+        Reply::status(500),
+    ]);
 
     let error = notify(&config(&stub.url()), BODY).expect_err("the API failed");
 
     assert!(error.to_string().contains("500"), "{error}");
+}
+
+/// A 5xx on the comment list is a transient answer, and the run can still
+/// proceed once a later attempt succeeds.
+#[test]
+fn a_5xx_on_the_list_is_retried_until_it_succeeds() {
+    let stub = Stub::start(vec![
+        Reply::status(500),
+        Reply::ok(b"[]"),
+        Reply::ok(br#"{"id":11,"html_url":"https://github.com/acme/site/pull/7#issuecomment-11"}"#),
+    ]);
+
+    let result = notify(&config(&stub.url()), BODY).expect("the retry reaches the 200");
+
+    assert_eq!(
+        result,
+        Notification::Posted {
+            url: "https://github.com/acme/site/pull/7#issuecomment-11".to_owned(),
+            updated: false,
+        }
+    );
+    let requests = stub.requests();
+    assert_eq!(requests.len(), 3);
+    assert_eq!(requests[0].method, "GET");
+    assert_eq!(requests[1].method, "GET");
+    assert_eq!(requests[2].method, "POST");
+}
+
+/// A 5xx while posting the comment is not retried: sending it again once the
+/// comment was already created would post it twice.
+#[test]
+fn posting_the_comment_is_not_retried() {
+    let stub = Stub::start(vec![Reply::ok(b"[]"), Reply::status(500)]);
+
+    let error = notify(&config(&stub.url()), BODY).expect_err("the post failed");
+
+    assert!(error.to_string().contains("500"), "{error}");
+    assert_eq!(stub.requests().len(), 2);
 }
 
 #[test]

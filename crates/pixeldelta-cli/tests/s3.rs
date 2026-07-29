@@ -233,6 +233,64 @@ fn a_stored_report_answers_with_an_encoded_url() {
     );
 }
 
+/// A single 5xx is a transient answer, not a request to give up on.
+#[test]
+fn a_5xx_is_retried_until_the_service_answers() {
+    let stub = Stub::start(vec![Reply::status(500), Reply::status(200)]);
+    let storage = Storage::s3(config(&stub.url()));
+
+    let exists = storage.exists("abc123").expect("the retry reaches the 200");
+
+    assert!(exists);
+    assert_eq!(stub.requests().len(), 2);
+}
+
+/// Three 5xx answers exhaust the retries, and no fourth request is sent.
+#[test]
+fn three_5xx_answers_exhaust_the_retries() {
+    let stub = Stub::start(vec![
+        Reply::status(500),
+        Reply::status(500),
+        Reply::status(500),
+    ]);
+    let storage = Storage::s3(config(&stub.url()));
+
+    let error = storage
+        .exists("abc123")
+        .expect_err("the last 5xx is returned as an error");
+
+    assert!(error.to_string().contains("500"), "{error}");
+    assert_eq!(stub.requests().len(), 3);
+}
+
+/// A connection closed without a response looks like any other transport
+/// failure, and is retried the same way.
+#[test]
+fn a_dropped_connection_is_retried() {
+    let stub = Stub::start(vec![Reply::dropped(), Reply::status(200)]);
+    let storage = Storage::s3(config(&stub.url()));
+
+    let exists = storage.exists("abc123").expect("the retry reaches the 200");
+
+    assert!(exists);
+    assert_eq!(stub.requests().len(), 2);
+}
+
+/// A 4xx is an answer about the request itself, not a transient failure, so
+/// sending it again would not change it.
+#[test]
+fn a_4xx_is_not_retried() {
+    let stub = Stub::start(vec![Reply::status(403)]);
+    let storage = Storage::s3(config(&stub.url()));
+
+    let error = storage
+        .exists("abc123")
+        .expect_err("a 403 is not a stored-or-not answer");
+
+    assert!(error.to_string().contains("403"), "{error}");
+    assert_eq!(stub.requests().len(), 1);
+}
+
 #[test]
 fn a_refused_request_is_an_error() {
     let stub = Stub::start(vec![Reply::status(403)]);

@@ -291,7 +291,7 @@ impl Storage {
         method: &str,
         path: &str,
         body: &[u8],
-    ) -> Result<crate::s3::Answer, StorageError> {
+    ) -> Result<crate::http::Answer, StorageError> {
         s3.send(method, path, body)
             .map_err(|source| StorageError::Request {
                 path: path.to_owned(),

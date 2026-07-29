@@ -6,6 +6,7 @@
 mod baseline;
 mod ci;
 mod github;
+mod http;
 mod paths;
 mod run;
 mod s3;

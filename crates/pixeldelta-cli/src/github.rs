@@ -4,6 +4,8 @@ use std::path::Path;
 
 use serde::Deserialize;
 
+use crate::http::{self, Answer};
+
 /// Where to post and what to authenticate with.
 #[derive(Debug, Clone)]
 pub struct GithubConfig {
@@ -62,11 +64,7 @@ struct Posted {
 /// The comment to replace is the one whose body opens with the marker the body
 /// carries.
 pub fn notify(config: &GithubConfig, body: &str) -> Result<Notification, GithubError> {
-    let agent = ureq::Agent::new_with_config(
-        ureq::Agent::config_builder()
-            .http_status_as_error(false)
-            .build(),
-    );
+    let agent = http::agent();
 
     let list = format!(
         "{}/repos/{}/issues/{}/comments?per_page=100",
@@ -135,12 +133,38 @@ pub fn pull_request_number(event_path: &Path) -> Option<u64> {
     event.pull_request.map(|pull_request| pull_request.number)
 }
 
-struct Answer {
-    status: u16,
-    body: Vec<u8>,
+/// Sends one request, retrying only the comment list.
+///
+/// Retrying `POST` or `PATCH` is not safe: a 5xx does not say whether the
+/// comment was created before the connection failed, and sending it again
+/// would post a second one.
+fn send(
+    agent: &ureq::Agent,
+    config: &GithubConfig,
+    method: &str,
+    target: &str,
+    body: Option<&[u8]>,
+) -> Result<Answer, GithubError> {
+    let answer = if method == "GET" {
+        http::retry(|| send_once(agent, config, method, target, body))?
+    } else {
+        send_once(agent, config, method, target, body)?
+    };
+
+    // The retry above needs to see a 5xx as a status, so the answer is only
+    // classified as an error once no more attempts remain.
+    let status = answer.status;
+    if !(200..300).contains(&status) && status != 403 {
+        return Err(GithubError::Status {
+            status,
+            target: target.to_owned(),
+        });
+    }
+    Ok(answer)
 }
 
-fn send(
+/// Sends one attempt, without judging its status.
+fn send_once(
     agent: &ureq::Agent,
     config: &GithubConfig,
     method: &str,
@@ -168,12 +192,6 @@ fn send(
 
     let status = answer.status().as_u16();
     let body = answer.body_mut().read_to_vec().map_err(failed)?;
-    if !(200..300).contains(&status) && status != 403 {
-        return Err(GithubError::Status {
-            status,
-            target: target.to_owned(),
-        });
-    }
     Ok(Answer { status, body })
 }
 

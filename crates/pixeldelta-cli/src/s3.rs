@@ -4,6 +4,7 @@
 //! `GET` to read an object, and `PUT` to write one. Anything an S3-compatible
 //! service has beyond that is not needed to keep snapshots.
 
+use crate::http::{self, Answer};
 use crate::sigv4::{self, Credentials};
 
 /// Where an S3-compatible storage lives and how to authenticate to it.
@@ -27,12 +28,6 @@ pub struct S3 {
     agent: ureq::Agent,
 }
 
-/// What a request came back with.
-pub(crate) struct Answer {
-    pub status: u16,
-    pub body: Vec<u8>,
-}
-
 impl std::fmt::Debug for S3 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("S3")
@@ -46,14 +41,10 @@ impl std::fmt::Debug for S3 {
 
 impl S3 {
     pub(crate) fn new(config: S3Config) -> S3 {
-        // Statuses outside 2xx are answers this crate reads, not transport
-        // failures: a 404 means the key is not stored.
-        let agent = ureq::Agent::new_with_config(
-            ureq::Agent::config_builder()
-                .http_status_as_error(false)
-                .build(),
-        );
-        S3 { config, agent }
+        S3 {
+            config,
+            agent: http::agent(),
+        }
     }
 
     /// Full URL of an object, where `path` is relative to the prefix.
@@ -69,13 +60,25 @@ impl S3 {
         }
     }
 
-    /// Sends one request, returning the status and body it answered with.
+    /// Sends a request, retrying it on a connection failure or a 5xx.
+    ///
+    /// `HEAD` and `GET` only read, and `PUT` writes the same key with the
+    /// same body on every attempt, so all three are safe to repeat.
     pub(crate) fn send(
         &self,
         method: &str,
         path: &str,
         body: &[u8],
     ) -> Result<Answer, ureq::Error> {
+        http::retry(|| self.send_once(method, path, body))
+    }
+
+    /// Signs and sends one attempt.
+    ///
+    /// Signing happens here rather than in `send` because `x-amz-date` is
+    /// part of what the signature covers, and a retried attempt sent later
+    /// has to sign its own timestamp.
+    fn send_once(&self, method: &str, path: &str, body: &[u8]) -> Result<Answer, ureq::Error> {
         let url = self.url(path);
         let headers = sigv4::sign(
             &sigv4::Request {

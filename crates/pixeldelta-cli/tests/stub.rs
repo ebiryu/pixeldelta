@@ -27,24 +27,32 @@ impl Request {
 
 /// A canned reply.
 #[derive(Debug, Clone)]
-pub struct Reply {
-    pub status: u16,
-    pub body: Vec<u8>,
+pub enum Reply {
+    /// A status and body written back over the connection.
+    Answer { status: u16, body: Vec<u8> },
+    /// The connection is accepted and the request is read, but nothing is
+    /// written back before it closes, as a reset or stalled connection looks
+    /// to the client.
+    Dropped,
 }
 
 impl Reply {
     pub fn ok(body: &[u8]) -> Self {
-        Reply {
+        Reply::Answer {
             status: 200,
             body: body.to_vec(),
         }
     }
 
     pub fn status(status: u16) -> Self {
-        Reply {
+        Reply::Answer {
             status,
             body: Vec::new(),
         }
+    }
+
+    pub fn dropped() -> Self {
+        Reply::Dropped
     }
 }
 
@@ -125,15 +133,22 @@ fn read_request(stream: &mut std::net::TcpStream) -> Request {
 }
 
 fn write_reply(stream: &mut std::net::TcpStream, reply: &Reply) {
-    let head = format!(
-        "HTTP/1.1 {} {}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
-        reply.status,
-        reason(reply.status),
-        reply.body.len(),
-    );
-    let _ = stream.write_all(head.as_bytes());
-    let _ = stream.write_all(&reply.body);
-    let _ = stream.flush();
+    match reply {
+        Reply::Answer { status, body } => {
+            let head = format!(
+                "HTTP/1.1 {} {}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
+                status,
+                reason(*status),
+                body.len(),
+            );
+            let _ = stream.write_all(head.as_bytes());
+            let _ = stream.write_all(body);
+            let _ = stream.flush();
+        }
+        Reply::Dropped => {
+            let _ = stream.shutdown(std::net::Shutdown::Both);
+        }
+    }
 }
 
 fn reason(status: u16) -> &'static str {
@@ -142,6 +157,7 @@ fn reason(status: u16) -> &'static str {
         201 => "Created",
         403 => "Forbidden",
         404 => "Not Found",
+        500 => "Internal Server Error",
         _ => "Unknown",
     }
 }
