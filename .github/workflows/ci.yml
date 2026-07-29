@@ -79,6 +79,43 @@ jobs:
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       - run: cargo +1.88 check --workspace --all-targets
 
+  # A bounded run of the decoder fuzz target, starting from fuzz/seeds/decode.
+  # `decode` is where bytes from outside the process enter pixeldelta, and a
+  # panic there aborts the Node process instead of raising an exception.
+  #
+  # libfuzzer-sys builds only on nightly, so this is the one job off the pinned
+  # stable toolchain, and `publish` leaves it out of `needs`: a nightly that
+  # breaks should not hold a release. What keeps a fixed crash from coming back
+  # is the corpus replay in `cargo test`, which the `check` job runs on stable.
+  #
+  # A minute is enough to cover the corpus and the mutations near it. Longer
+  # runs belong on a workstation, through `just fuzz`.
+  fuzz:
+    name: Fuzz the decoder
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: nightly
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          key: fuzz
+      - run: cargo install --locked cargo-fuzz
+      # libFuzzer requires the directory it writes what it finds to to exist.
+      # It is not committed, so the job creates it.
+      - run: mkdir -p fuzz/corpus/decode
+      - run: cargo fuzz run decode fuzz/corpus/decode fuzz/seeds/decode -- -max_total_time=60
+      # Reproducing a crash needs the input it was found on, which otherwise
+      # goes away with the runner.
+      - name: Upload the failing input
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fuzz-artifacts
+          path: fuzz/artifacts
+          if-no-files-found: ignore
+
   build:
     name: Build ${{ matrix.settings.target }}
     runs-on: ${{ matrix.settings.host }}

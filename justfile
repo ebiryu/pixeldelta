@@ -69,6 +69,28 @@ smoke:
 deny:
     cargo deny check
 
+# Fuzz the decoder. Takes how many seconds to run, default 60:
+#
+#     just fuzz 600
+#
+# libfuzzer-sys builds only on nightly, so fuzz/ is a workspace of its own and
+# stays out of `just check`. What to do with a crash it finds is in
+# fuzz/README.md.
+fuzz seconds="60":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if ! cargo fuzz --version >/dev/null 2>&1; then
+        echo "cargo-fuzz is missing: cargo install --locked cargo-fuzz" >&2
+        exit 1
+    fi
+    rustup toolchain install nightly --profile minimal
+    # fuzz/seeds/decode is the committed set and is read only; fuzz/corpus/decode
+    # is where libFuzzer writes what it finds, and is not committed. libFuzzer
+    # requires the directory it writes to to exist.
+    mkdir -p fuzz/corpus/decode
+    cargo +nightly fuzz run decode fuzz/corpus/decode fuzz/seeds/decode \
+        -- -max_total_time={{seconds}}
+
 # Build at the MSRV, which the workspace pins to 1.88.
 msrv:
     rustup toolchain install 1.88 --profile minimal

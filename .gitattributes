@@ -8,3 +8,7 @@
 *.png binary
 *.node binary
 *.wasm binary
+
+# Fuzzing seeds are byte sequences whatever their extension says, and a seed
+# rewritten to LF on checkout is no longer the input it was kept for.
+fuzz/seeds/** binary
