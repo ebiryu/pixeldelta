@@ -784,6 +784,7 @@ dependencies = [
  "pixeldelta-core",
  "pixeldelta-io",
  "pixeldelta-report",
+ "rayon",
  "serde",
  "serde_json",
  "sha2",

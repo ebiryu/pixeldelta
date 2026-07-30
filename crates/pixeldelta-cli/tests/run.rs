@@ -2,8 +2,8 @@
 
 use std::path::Path;
 
-use pixeldelta_cli::{run_dirs, write_report};
-use pixeldelta_io::encode_png;
+use pixeldelta_cli::{run_dirs, write_report, CliError};
+use pixeldelta_io::{encode_png, DecodeError, Format};
 use pixeldelta_report::Category;
 
 /// A solid-color one-row PNG of the given width.
@@ -196,4 +196,82 @@ fn write_report_writes_diff_images_as_files_and_the_html_has_no_data_uri() {
     assert!(out.join("images/diff/nested/diff.png").is_file());
     let html = std::fs::read_to_string(out.join("index.html")).expect("the file is readable");
     assert!(!html.contains("data:image"), "{html}");
+}
+
+/// Entries come out in the lexicographic order of their relative path, not in
+/// whatever order the pairs were written to disk or finished comparing in.
+///
+/// The names below are picked so that lexicographic order differs from both
+/// the order they are written here and, since the comparisons can run in
+/// parallel, from whatever order finishes first.
+#[test]
+fn entries_are_in_lexicographic_path_order() {
+    let dir = tempfile::tempdir().unwrap();
+    let (e, a) = (dir.path().join("expected"), dir.path().join("actual"));
+
+    // Written zzz, mmm, aaa, yyy, bbb; lexicographically aaa < bbb < mmm < yyy < zzz.
+    write(&a.join("zzz_top.png"), &png([1, 2, 3, 255], 4));
+    write(&e.join("mmm_dir/nnn.png"), &png([255, 0, 0, 255], 4));
+    write(&a.join("mmm_dir/nnn.png"), &png([0, 0, 255, 255], 4));
+    write(&e.join("aaa_top.png"), &png([9, 9, 9, 255], 4));
+    write(&a.join("aaa_top.png"), &png([9, 9, 9, 255], 4));
+    write(&e.join("yyy_top.png"), &png([4, 5, 6, 255], 4));
+    write(&e.join("bbb_top.png"), &png([0, 0, 0, 255], 4));
+    write(&a.join("bbb_top.png"), &png([0, 0, 0, 255], 8));
+
+    let report = run_dirs(&e, &a, 0.1, true, 0.0).expect("the run finishes");
+
+    let paths: Vec<&str> = report.entries.iter().map(|e| e.path.as_str()).collect();
+    assert_eq!(
+        paths,
+        vec![
+            "aaa_top.png",
+            "bbb_top.png",
+            "mmm_dir/nnn.png",
+            "yyy_top.png",
+            "zzz_top.png",
+        ]
+    );
+}
+
+/// When several files fail to decode, the reported error is the first one in
+/// lexicographic path order, not whichever comparison happens to fail first.
+///
+/// `decode` reports neither a path nor any other detail identifying its input
+/// once the bytes are ruled out as a PNG, so the two broken files are given
+/// bytes that fail in distinguishable ways: the lexicographically first,
+/// `aaa_broken.png`, has no recognizable image signature at all
+/// (`DecodeError::UnsupportedFormat`), while the second, `zzz_broken.png`, has
+/// a PNG signature followed by nothing (`DecodeError::Malformed`). Getting the
+/// `UnsupportedFormat` variant back confirms the first one in path order is
+/// the one that surfaced.
+#[test]
+fn the_reported_error_names_the_first_broken_file_in_path_order() {
+    let dir = tempfile::tempdir().unwrap();
+    let (e, a) = (dir.path().join("expected"), dir.path().join("actual"));
+
+    write(&e.join("aaa_broken.png"), b"not an image at all");
+    write(&a.join("aaa_broken.png"), b"not an image at all");
+    write(&e.join("mmm_good.png"), &png([9, 9, 9, 255], 4));
+    write(&a.join("mmm_good.png"), &png([9, 9, 9, 255], 4));
+    write(
+        &e.join("zzz_broken.png"),
+        &[0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a],
+    );
+    write(
+        &a.join("zzz_broken.png"),
+        &[0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a],
+    );
+
+    let error = run_dirs(&e, &a, 0.1, true, 0.0).expect_err("a broken PNG fails the run");
+
+    assert!(
+        matches!(
+            error,
+            CliError::Decode(DecodeError::UnsupportedFormat {
+                format: Format::Unknown
+            })
+        ),
+        "expected the UnsupportedFormat error from aaa_broken.png, got {error}"
+    );
 }

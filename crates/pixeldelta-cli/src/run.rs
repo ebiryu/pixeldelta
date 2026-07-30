@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use pixeldelta_core::{compare, CompareOptions, DiffStyle, Image, Verdict};
 use pixeldelta_io::{decode, encode_png, Decoded};
 use pixeldelta_report::{Category, Cluster, Entry, Images, Report, Side};
+use rayon::prelude::*;
 
 use crate::CliError;
 
@@ -35,23 +36,44 @@ pub fn run_dirs(
         ..Default::default()
     };
 
-    let mut entries = Vec::new();
-    for rel in expected_files.union(&actual_files) {
-        let in_expected = expected_files.contains(rel);
-        let in_actual = actual_files.contains(rel);
-        let entry = match (in_expected, in_actual) {
-            (true, true) => compare_pair(
-                rel,
-                &expected.join(rel),
-                &actual.join(rel),
-                &opts,
-                tolerance_ratio,
-            )?,
-            (false, true) => only_one(rel, &actual.join(rel), Category::Added)?,
-            (true, false) => only_one(rel, &expected.join(rel), Category::Removed)?,
-            (false, false) => unreachable!("a path came from one of the two sets"),
-        };
-        entries.push(entry);
+    // `BTreeSet::union` merges two already-sorted iterators, so this is the
+    // lexicographic order of the relative paths. Materializing it into a
+    // `Vec` first gives the parallel map below an indexed source, which is
+    // what lets its result preserve that order.
+    let rels: Vec<&str> = expected_files
+        .union(&actual_files)
+        .map(String::as_str)
+        .collect();
+
+    // One path's read-decode-compare work runs per Rayon worker thread, so the
+    // number of decoded image buffers held at once is bounded by the pool
+    // size rather than by the number of paths.
+    let results: Vec<Result<Entry, CliError>> = rels
+        .par_iter()
+        .map(|&rel| {
+            let in_expected = expected_files.contains(rel);
+            let in_actual = actual_files.contains(rel);
+            match (in_expected, in_actual) {
+                (true, true) => compare_pair(
+                    rel,
+                    &expected.join(rel),
+                    &actual.join(rel),
+                    &opts,
+                    tolerance_ratio,
+                ),
+                (false, true) => only_one(rel, &actual.join(rel), Category::Added),
+                (true, false) => only_one(rel, &expected.join(rel), Category::Removed),
+                (false, false) => unreachable!("a path came from one of the two sets"),
+            }
+        })
+        .collect();
+
+    // `results` is in path order because the map above is indexed, so walking
+    // it in order and returning on the first error reports the first failure
+    // in path order rather than whichever worker thread failed first.
+    let mut entries = Vec::with_capacity(results.len());
+    for result in results {
+        entries.push(result?);
     }
 
     Ok(Report {

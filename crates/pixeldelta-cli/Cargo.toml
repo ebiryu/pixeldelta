@@ -37,3 +37,7 @@ ureq = "3"
 # has to be right the first time.
 hmac = "0.12"
 sha2 = "0.10"
+# Runs the per-file read-decode-compare work of `run_dirs` across a
+# work-stealing thread pool. pixeldelta-core already depends on it, so it adds
+# no new crate to the build graph.
+rayon = "1.11"
