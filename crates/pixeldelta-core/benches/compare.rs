@@ -4,7 +4,7 @@
 //! `tools/fixtures/bench.mjs`. Decoding happens once per size and is not part
 //! of what is timed: the crate compares decoded buffers.
 //!
-//! Each size is measured in three configurations, because they exercise
+//! Each size is measured in four configurations, because they exercise
 //! different amounts of work:
 //!
 //! - `identical`: both sides are the same buffer, so no pixel reaches the
@@ -12,6 +12,9 @@
 //! - `aa-off`: the pair, with the detector disabled.
 //! - `aa-on`: the pair, with the detector at its default. The difference
 //!   against `aa-off` is what the detector costs.
+//! - `layout-shift`: the pair, with clustering and the displacement search on.
+//!   The difference against `aa-on` is what the search over each cluster's
+//!   bounds costs.
 
 use std::fs::File;
 use std::io::BufReader;
@@ -66,14 +69,17 @@ fn bench_compare(c: &mut Criterion) {
         let (a, b) = (base.image(), head.image());
 
         group.throughput(Throughput::Elements(a.pixel_count()));
-        for (case, right, detect_antialiasing) in [
-            ("identical", &a, true),
-            ("aa-off", &b, false),
-            ("aa-on", &b, true),
+        for (case, right, detect_antialiasing, layout_shift, cluster) in [
+            ("identical", &a, true, false, false),
+            ("aa-off", &b, false, false, false),
+            ("aa-on", &b, true, false, false),
+            ("layout-shift", &b, true, true, true),
         ] {
             let opts = CompareOptions {
                 threshold: 0.1,
                 detect_antialiasing,
+                cluster,
+                layout_shift,
                 ..CompareOptions::default()
             };
             group.bench_with_input(BenchmarkId::new(case, size), &opts, |bencher, opts| {
