@@ -17,12 +17,20 @@ use crate::CliError;
 /// image. `threshold` and `antialiasing` come from the caller. `tolerance_ratio`
 /// is the fraction of an image's pixels that may differ and still count as
 /// `tolerated` rather than `changed`.
+///
+/// When `images_dir` is `Some`, each entry's images are written under it at
+/// `pixeldelta_report::asset_path(&entry.path, side)` as soon as that entry is
+/// compared, so at most one entry's worth of encoded PNGs per worker thread is
+/// held at a time rather than the whole run's. When it is `None`, the bytes
+/// are produced and dropped without being written. Either way, `Entry::images`
+/// records which sides the entry has.
 pub fn run_dirs(
     expected: &Path,
     actual: &Path,
     threshold: f32,
     antialiasing: bool,
     tolerance_ratio: f64,
+    images_dir: Option<&Path>,
 ) -> Result<Report, CliError> {
     let expected_files = collect_pngs(expected)?;
     let actual_files = collect_pngs(actual)?;
@@ -60,9 +68,10 @@ pub fn run_dirs(
                     &actual.join(rel),
                     &opts,
                     tolerance_ratio,
+                    images_dir,
                 ),
-                (false, true) => only_one(rel, &actual.join(rel), Category::Added),
-                (true, false) => only_one(rel, &expected.join(rel), Category::Removed),
+                (false, true) => only_one(rel, &actual.join(rel), Category::Added, images_dir),
+                (true, false) => only_one(rel, &expected.join(rel), Category::Removed, images_dir),
                 (false, false) => unreachable!("a path came from one of the two sets"),
             }
         })
@@ -92,6 +101,7 @@ fn compare_pair(
     actual_path: &Path,
     opts: &CompareOptions,
     tolerance_ratio: f64,
+    images_dir: Option<&Path>,
 ) -> Result<Entry, CliError> {
     let expected_bytes =
         std::fs::read(expected_path).map_err(|source| read_error(expected_path, source))?;
@@ -102,6 +112,8 @@ fn compare_pair(
     let actual = decode(&actual_bytes).map_err(|source| CliError::decode(actual_path, source))?;
 
     if expected.width() != actual.width() || expected.height() != actual.height() {
+        write_image(images_dir, rel, Side::Expected, &expected_bytes)?;
+        write_image(images_dir, rel, Side::Actual, &actual_bytes)?;
         return Ok(Entry {
             path: rel.to_owned(),
             category: Category::SizeMismatch,
@@ -112,9 +124,9 @@ fn compare_pair(
             actual_size: Some([actual.width(), actual.height()]),
             image_size: None,
             images: Images {
-                expected: Some(expected_bytes),
-                actual: Some(actual_bytes),
-                diff: None,
+                expected: true,
+                actual: true,
+                diff: false,
             },
         });
     }
@@ -124,6 +136,7 @@ fn compare_pair(
     let result = compare(&a, &b, opts);
 
     if result.verdict == Verdict::Match {
+        write_image(images_dir, rel, Side::Expected, &expected_bytes)?;
         return Ok(Entry {
             path: rel.to_owned(),
             category: Category::Matched,
@@ -134,9 +147,9 @@ fn compare_pair(
             actual_size: None,
             image_size: None,
             images: Images {
-                expected: Some(expected_bytes),
-                actual: None,
-                diff: None,
+                expected: true,
+                actual: false,
+                diff: false,
             },
         });
     }
@@ -152,6 +165,9 @@ fn compare_pair(
     } else {
         Category::Changed
     };
+    write_image(images_dir, rel, Side::Expected, &expected_bytes)?;
+    write_image(images_dir, rel, Side::Actual, &actual_bytes)?;
+    write_image(images_dir, rel, Side::Diff, &diff_png)?;
     Ok(Entry {
         path: rel.to_owned(),
         category,
@@ -162,30 +178,41 @@ fn compare_pair(
         actual_size: None,
         image_size: Some([expected.width(), expected.height()]),
         images: Images {
-            expected: Some(expected_bytes),
-            actual: Some(actual_bytes),
-            diff: Some(diff_png),
+            expected: true,
+            actual: true,
+            diff: true,
         },
     })
 }
 
 /// Builds an entry for a file present on only one side.
-fn only_one(rel: &str, path: &Path, category: Category) -> Result<Entry, CliError> {
+fn only_one(
+    rel: &str,
+    path: &Path,
+    category: Category,
+    images_dir: Option<&Path>,
+) -> Result<Entry, CliError> {
     let bytes = std::fs::read(path).map_err(|source| read_error(path, source))?;
     // Decoding it validates the file and reports a broken PNG here rather than
     // in the browser.
     decode(&bytes).map_err(|source| CliError::decode(path, source))?;
     let images = match category {
-        Category::Added => Images {
-            expected: None,
-            actual: Some(bytes),
-            diff: None,
-        },
-        _ => Images {
-            expected: Some(bytes),
-            actual: None,
-            diff: None,
-        },
+        Category::Added => {
+            write_image(images_dir, rel, Side::Actual, &bytes)?;
+            Images {
+                expected: false,
+                actual: true,
+                diff: false,
+            }
+        }
+        _ => {
+            write_image(images_dir, rel, Side::Expected, &bytes)?;
+            Images {
+                expected: true,
+                actual: false,
+                diff: false,
+            }
+        }
     };
     Ok(Entry {
         path: rel.to_owned(),
@@ -198,6 +225,19 @@ fn only_one(rel: &str, path: &Path, category: Category) -> Result<Entry, CliErro
         image_size: None,
         images,
     })
+}
+
+/// Writes `bytes` under `dir` at the entry's path for `side`, when a
+/// destination was given.
+///
+/// Several worker threads call this at once for different entries, but never
+/// for the same path, so no two calls race on the same file.
+fn write_image(dir: Option<&Path>, rel: &str, side: Side, bytes: &[u8]) -> Result<(), CliError> {
+    let Some(dir) = dir else {
+        return Ok(());
+    };
+    let path = dir.join(pixeldelta_report::asset_path(rel, side));
+    write_asset(&path, bytes)
 }
 
 fn image(decoded: &Decoded) -> Image<'_> {
@@ -217,35 +257,18 @@ fn to_cluster(c: &pixeldelta_core::Cluster) -> Cluster {
     }
 }
 
-/// Writes the HTML report into `dir` as index.html, alongside every image an
-/// entry holds.
+/// Writes the HTML report as `index.html` in `dir`.
 ///
-/// The directory this produces is self-contained: it reuses no image from
-/// storage, so `dir` taken on its own shows every image once opened in a
-/// browser.
+/// The images it references are expected to already be on disk under `dir`,
+/// at the paths `run_dirs`'s `images_dir` argument writes them to. Writing
+/// `index.html` last keeps the same invariant a stored snapshot's manifest
+/// has: a directory without it is an incomplete report, not one merely
+/// missing a few images.
 pub(crate) fn write_html(report: &Report, dir: &Path) -> Result<(), CliError> {
     std::fs::create_dir_all(dir).map_err(|source| write_error(dir, source))?;
-    for entry in &report.entries {
-        write_entry_images(entry, dir)?;
-    }
     let html = pixeldelta_report::html(report, pixeldelta_report::local_assets);
     let index = dir.join("index.html");
     std::fs::write(&index, &html).map_err(|source| write_error(&index, source))?;
-    Ok(())
-}
-
-/// Writes every image an entry holds to its path below `dir`.
-fn write_entry_images(entry: &Entry, dir: &Path) -> Result<(), CliError> {
-    for (side, bytes) in [
-        (Side::Expected, &entry.images.expected),
-        (Side::Actual, &entry.images.actual),
-        (Side::Diff, &entry.images.diff),
-    ] {
-        if let Some(bytes) = bytes {
-            let path = dir.join(pixeldelta_report::asset_path(&entry.path, side));
-            write_asset(&path, bytes)?;
-        }
-    }
     Ok(())
 }
 

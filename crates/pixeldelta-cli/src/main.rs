@@ -242,6 +242,7 @@ fn run(args: RunArgs) -> ExitCode {
         args.threshold,
         !args.no_antialiasing,
         args.tolerance_ratio,
+        args.report.as_deref(),
     ) {
         Ok(report) => report,
         Err(error) => {

@@ -248,20 +248,24 @@ impl Storage {
     /// Stores the HTML report for `key`, along with the images it references.
     ///
     /// Each entry in `images` is a path below `<key>/report/` (for example
-    /// `images/diff/foo.png`) and its bytes. The images are written first and
-    /// `index.html` last, so a write that stopped halfway does not read as a
-    /// complete report.
+    /// `images/diff/foo.png`) and the local file its bytes are read from. Each
+    /// file is read inside the same parallel upload the images are put with,
+    /// so the bytes held in memory at once are bounded by the request
+    /// concurrency rather than by how many images the report has. The images
+    /// are written first and `index.html` last, so a write that stopped
+    /// halfway does not read as a complete report.
     ///
     /// Returns a URL when the backend can serve one.
     pub fn store_report(
         &self,
         key: &str,
         html: &[u8],
-        images: &[(String, &[u8])],
+        images: &[(String, PathBuf)],
     ) -> Result<Option<String>, StorageError> {
         validate_key(key)?;
-        parallel_try_for_each(images, |(rel, bytes)| {
-            self.put_object(&format!("{key}/report/{rel}"), bytes)
+        parallel_try_for_each(images, |(rel, path)| {
+            let bytes = read(path)?;
+            self.put_object(&format!("{key}/report/{rel}"), &bytes)
         })?;
         let path = format!("{key}/report/index.html");
         self.put_object(&path, html)?;

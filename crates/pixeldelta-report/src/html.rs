@@ -459,9 +459,9 @@ pub fn url_path(path: &str) -> String {
 /// the paths [`asset_path`] describes.
 pub fn local_assets(entry: &Entry, side: Side) -> Option<String> {
     let held = match side {
-        Side::Expected => entry.images.expected.is_some(),
-        Side::Actual => entry.images.actual.is_some(),
-        Side::Diff => entry.images.diff.is_some(),
+        Side::Expected => entry.images.expected,
+        Side::Actual => entry.images.actual,
+        Side::Diff => entry.images.diff,
     };
     held.then(|| url_path(&asset_path(&entry.path, side)))
 }

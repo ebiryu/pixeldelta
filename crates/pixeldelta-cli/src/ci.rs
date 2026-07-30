@@ -1,6 +1,6 @@
 //! Comparing a checkout against the snapshot stored for its baseline commit.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use pixeldelta_report::{Entry, Side, Summary};
 
@@ -96,6 +96,7 @@ pub fn ci(opts: &CiOptions) -> Result<CiRun, CliError> {
         opts.threshold,
         opts.antialiasing,
         opts.tolerance_ratio,
+        opts.report,
     )?;
     write_report(&report, None, opts.json, opts.junit)?;
 
@@ -110,7 +111,7 @@ pub fn ci(opts: &CiOptions) -> Result<CiRun, CliError> {
         Some(dir) => {
             write_html(&report, dir)?;
             let html = pixeldelta_report::html(&report, storage_assets(&baseline));
-            let diff_images = diff_images(&report);
+            let diff_images = diff_images(&report, dir);
             opts.storage
                 .store_report(&resolved.head, html.as_bytes(), &diff_images)?
         }
@@ -154,9 +155,9 @@ pub fn ci(opts: &CiOptions) -> Result<CiRun, CliError> {
 fn storage_assets(baseline: &str) -> impl Fn(&Entry, Side) -> Option<String> + '_ {
     move |entry, side| {
         let held = match side {
-            Side::Expected => entry.images.expected.is_some(),
-            Side::Actual => entry.images.actual.is_some(),
-            Side::Diff => entry.images.diff.is_some(),
+            Side::Expected => entry.images.expected,
+            Side::Actual => entry.images.actual,
+            Side::Diff => entry.images.diff,
         };
         if !held {
             return None;
@@ -175,21 +176,20 @@ fn storage_assets(baseline: &str) -> impl Fn(&Entry, Side) -> Option<String> + '
 }
 
 /// Collects the diff image each entry holds, as a path below the report
-/// directory and its bytes.
+/// directory and the local file `run_dirs` already wrote it to under
+/// `report_dir`.
 ///
 /// Expected and actual are left out: they are already in the storage as
 /// snapshots, so re-uploading them alongside the report would be redundant.
-fn diff_images(report: &pixeldelta_report::Report) -> Vec<(String, &[u8])> {
+fn diff_images(report: &pixeldelta_report::Report, report_dir: &Path) -> Vec<(String, PathBuf)> {
     report
         .entries
         .iter()
-        .filter_map(|entry| {
-            entry.images.diff.as_deref().map(|bytes| {
-                (
-                    pixeldelta_report::asset_path(&entry.path, Side::Diff),
-                    bytes,
-                )
-            })
+        .filter(|entry| entry.images.diff)
+        .map(|entry| {
+            let rel = pixeldelta_report::asset_path(&entry.path, Side::Diff);
+            let local = report_dir.join(&rel);
+            (rel, local)
         })
         .collect()
 }

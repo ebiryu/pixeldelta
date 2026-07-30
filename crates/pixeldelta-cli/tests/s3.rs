@@ -271,6 +271,9 @@ fn a_name_outside_the_unreserved_set_is_encoded_in_the_request_line() {
 /// The URL answered for a report is the one its objects were written to.
 #[test]
 fn a_stored_report_answers_with_an_encoded_url() {
+    let dir = tempfile::tempdir().expect("a temporary directory");
+    let image_path = dir.path().join("top.png");
+    std::fs::write(&image_path, b"a").expect("the file is written");
     let stub = Stub::start(vec![Reply::status(200), Reply::status(200)]);
     let storage = Storage::s3(config(&stub.url()));
 
@@ -278,7 +281,7 @@ fn a_stored_report_answers_with_an_encoded_url() {
         .store_report(
             "abc123",
             b"<html></html>",
-            &[("トップ.png".to_owned(), &b"a"[..])],
+            &[("トップ.png".to_owned(), image_path)],
         )
         .expect("the report is stored");
 

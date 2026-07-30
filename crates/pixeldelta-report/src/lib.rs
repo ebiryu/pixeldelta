@@ -62,16 +62,16 @@ pub struct Cluster {
     pub ssim: Option<f64>,
 }
 
-/// PNG bytes for the images an entry shows, filled per category.
+/// Which of an entry's images exist, filled per category.
 ///
 /// Not serialized: JSON and JUnit carry no images. `html()` does not read this
-/// field; a caller writes these bytes out as PNG files and supplies matching
-/// URLs to the `src` callback instead.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+/// field directly; a caller's `src` callback consults it to decide whether an
+/// entry has a given side at all before answering with a URL for it.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Images {
-    pub expected: Option<Vec<u8>>,
-    pub actual: Option<Vec<u8>>,
-    pub diff: Option<Vec<u8>>,
+    pub expected: bool,
+    pub actual: bool,
+    pub diff: bool,
 }
 
 /// One compared path.

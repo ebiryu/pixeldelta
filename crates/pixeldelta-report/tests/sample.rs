@@ -38,9 +38,9 @@ pub fn sample_report() -> Report {
                 expected_size: None,
                 actual_size: None,
                 images: Images {
-                    expected: Some(b"EXPECTED-PNG".to_vec()),
-                    actual: Some(b"ACTUAL-PNG".to_vec()),
-                    diff: Some(b"DIFF-PNG".to_vec()),
+                    expected: true,
+                    actual: true,
+                    diff: true,
                 },
             },
             Entry {
@@ -53,9 +53,9 @@ pub fn sample_report() -> Report {
                 actual_size: Some([1280, 912]),
                 image_size: None,
                 images: Images {
-                    expected: Some(b"EXPECTED-PNG".to_vec()),
-                    actual: Some(b"ACTUAL-PNG".to_vec()),
-                    diff: None,
+                    expected: true,
+                    actual: true,
+                    diff: false,
                 },
             },
             Entry {
@@ -68,9 +68,9 @@ pub fn sample_report() -> Report {
                 actual_size: None,
                 image_size: None,
                 images: Images {
-                    expected: None,
-                    actual: Some(b"ACTUAL-PNG".to_vec()),
-                    diff: None,
+                    expected: false,
+                    actual: true,
+                    diff: false,
                 },
             },
             Entry {
@@ -83,9 +83,9 @@ pub fn sample_report() -> Report {
                 actual_size: None,
                 image_size: None,
                 images: Images {
-                    expected: Some(b"EXPECTED-PNG".to_vec()),
-                    actual: None,
-                    diff: None,
+                    expected: true,
+                    actual: false,
+                    diff: false,
                 },
             },
             Entry {
@@ -106,9 +106,9 @@ pub fn sample_report() -> Report {
                 expected_size: None,
                 actual_size: None,
                 images: Images {
-                    expected: Some(b"EXPECTED-PNG".to_vec()),
-                    actual: Some(b"ACTUAL-PNG".to_vec()),
-                    diff: Some(b"DIFF-PNG".to_vec()),
+                    expected: true,
+                    actual: true,
+                    diff: true,
                 },
             },
             Entry {
@@ -121,9 +121,9 @@ pub fn sample_report() -> Report {
                 actual_size: None,
                 image_size: None,
                 images: Images {
-                    expected: Some(b"EXPECTED-PNG".to_vec()),
-                    actual: None,
-                    diff: None,
+                    expected: true,
+                    actual: false,
+                    diff: false,
                 },
             },
         ],

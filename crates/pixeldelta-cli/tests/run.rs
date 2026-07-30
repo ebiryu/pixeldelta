@@ -70,6 +70,7 @@ fn every_pairing_lands_in_the_right_category() {
         0.1,
         true,
         0.0,
+        None,
     )
     .expect("the run finishes");
 
@@ -100,6 +101,7 @@ fn a_changed_entry_carries_its_diff_image_and_clusters() {
         0.1,
         true,
         0.0,
+        None,
     )
     .expect("the run finishes");
 
@@ -108,9 +110,9 @@ fn a_changed_entry_carries_its_diff_image_and_clusters() {
         .iter()
         .find(|e| e.path == "nested/diff.png")
         .unwrap();
-    assert!(changed.images.expected.is_some());
-    assert!(changed.images.actual.is_some());
-    assert!(changed.images.diff.is_some());
+    assert!(changed.images.expected);
+    assert!(changed.images.actual);
+    assert!(changed.images.diff);
     assert!(!changed.clusters.is_empty());
     assert_eq!(changed.image_size, Some([4, 1]));
 }
@@ -122,7 +124,7 @@ fn matching_directories_pass() {
     write(&e.join("a.png"), &png([9, 9, 9, 255], 4));
     write(&a.join("a.png"), &png([9, 9, 9, 255], 4));
 
-    let report = run_dirs(&e, &a, 0.1, true, 0.0).expect("the run finishes");
+    let report = run_dirs(&e, &a, 0.1, true, 0.0, None).expect("the run finishes");
     assert!(report.summary().passed);
 }
 
@@ -138,7 +140,7 @@ fn a_small_difference_is_tolerated_when_the_ratio_allows_it() {
     );
 
     let tolerated =
-        run_dirs(&e, &a, 0.1, true, 0.01).expect("the run finishes with the ratio allowed");
+        run_dirs(&e, &a, 0.1, true, 0.01, None).expect("the run finishes with the ratio allowed");
     assert_eq!(
         category_of(&tolerated.entries, "a.png"),
         &Category::Tolerated
@@ -147,7 +149,8 @@ fn a_small_difference_is_tolerated_when_the_ratio_allows_it() {
     assert_eq!(tolerated.summary().changed, 0);
     assert!(tolerated.summary().passed);
 
-    let changed = run_dirs(&e, &a, 0.1, true, 0.0).expect("the run finishes with no tolerance");
+    let changed =
+        run_dirs(&e, &a, 0.1, true, 0.0, None).expect("the run finishes with no tolerance");
     assert_eq!(category_of(&changed.entries, "a.png"), &Category::Changed);
     assert!(!changed.summary().passed);
 }
@@ -162,6 +165,7 @@ fn write_report_emits_the_requested_files() {
         0.1,
         true,
         0.0,
+        Some(&out),
     )
     .unwrap();
 
@@ -188,14 +192,43 @@ fn write_report_writes_diff_images_as_files_and_the_html_has_no_data_uri() {
         0.1,
         true,
         0.0,
+        Some(&out),
     )
     .unwrap();
 
+    // `run_dirs` writes each entry's images as soon as that entry is
+    // compared, so the diff image is already on disk before `write_report`
+    // (and its `write_html`) ever runs.
+    assert!(out.join("images/diff/nested/diff.png").is_file());
+
     write_report(&report, Some(&out), None, None).expect("the files are written");
 
-    assert!(out.join("images/diff/nested/diff.png").is_file());
     let html = std::fs::read_to_string(out.join("index.html")).expect("the file is readable");
+    assert!(html.contains("images/diff/nested/diff.png"), "{html}");
     assert!(!html.contains("data:image"), "{html}");
+}
+
+#[test]
+fn run_dirs_with_no_images_dir_writes_nothing() {
+    let dir = fixture();
+    let out = dir.path().join("out");
+    std::fs::create_dir_all(&out).unwrap();
+
+    run_dirs(
+        &dir.path().join("expected"),
+        &dir.path().join("actual"),
+        0.1,
+        true,
+        0.0,
+        None,
+    )
+    .expect("the run finishes");
+
+    assert_eq!(
+        std::fs::read_dir(&out).unwrap().count(),
+        0,
+        "no images_dir was given, so nothing should have been written to out"
+    );
 }
 
 /// Entries come out in the lexicographic order of their relative path, not in
@@ -219,7 +252,7 @@ fn entries_are_in_lexicographic_path_order() {
     write(&e.join("bbb_top.png"), &png([0, 0, 0, 255], 4));
     write(&a.join("bbb_top.png"), &png([0, 0, 0, 255], 8));
 
-    let report = run_dirs(&e, &a, 0.1, true, 0.0).expect("the run finishes");
+    let report = run_dirs(&e, &a, 0.1, true, 0.0, None).expect("the run finishes");
 
     let paths: Vec<&str> = report.entries.iter().map(|e| e.path.as_str()).collect();
     assert_eq!(
@@ -251,7 +284,7 @@ fn the_reported_error_names_the_first_broken_file_in_path_order() {
     write(&e.join("zzz_broken.png"), b"not an image at all");
     write(&a.join("zzz_broken.png"), b"not an image at all");
 
-    let error = run_dirs(&e, &a, 0.1, true, 0.0).expect_err("a broken PNG fails the run");
+    let error = run_dirs(&e, &a, 0.1, true, 0.0, None).expect_err("a broken PNG fails the run");
 
     assert!(
         matches!(
@@ -278,7 +311,7 @@ fn a_broken_file_on_one_side_only_is_named() {
     write(&a.join("kept.png"), &png([9, 9, 9, 255], 4));
     write(&a.join("added_broken.png"), b"not an image at all");
 
-    let error = run_dirs(&e, &a, 0.1, true, 0.0).expect_err("a broken PNG fails the run");
+    let error = run_dirs(&e, &a, 0.1, true, 0.0, None).expect_err("a broken PNG fails the run");
 
     assert!(
         matches!(&error, CliError::Decode { path, .. } if path == &a.join("added_broken.png")),
@@ -294,7 +327,8 @@ fn an_unreadable_input_names_the_path() {
     let (e, a) = (dir.path().join("expected"), dir.path().join("actual"));
     write(&a.join("only.png"), &png([9, 9, 9, 255], 4));
 
-    let error = run_dirs(&e, &a, 0.1, true, 0.0).expect_err("a missing directory fails the run");
+    let error =
+        run_dirs(&e, &a, 0.1, true, 0.0, None).expect_err("a missing directory fails the run");
 
     assert!(
         matches!(

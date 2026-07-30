@@ -41,9 +41,9 @@ fn a_path_with_a_space_and_non_ascii_is_percent_encoded_in_the_src() {
             actual_size: None,
             image_size: None,
             images: Images {
-                expected: None,
-                actual: Some(b"ACTUAL-PNG".to_vec()),
-                diff: None,
+                expected: false,
+                actual: true,
+                diff: false,
             },
         }],
     };
