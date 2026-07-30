@@ -2,6 +2,7 @@
 
 mod stub;
 
+use std::collections::BTreeSet;
 use std::path::Path;
 
 use pixeldelta_cli::{Credentials, S3Config, Storage};
@@ -70,16 +71,23 @@ fn every_request_carries_a_signature() {
     assert!(request.header("x-amz-content-sha256").is_some());
 }
 
+/// `store` sends the two image PUTs concurrently, so their relative order is
+/// not fixed. What must hold is that both land before the manifest: the
+/// manifest PUT is the last request the stub receives, and the set of image
+/// PUTs before it is exactly the expected set.
 #[test]
 fn storing_a_snapshot_puts_the_images_before_the_manifest() {
     let dir = tempfile::tempdir().expect("a temporary directory");
     std::fs::write(dir.path().join("a.png"), b"a").expect("the file is written");
     std::fs::create_dir_all(dir.path().join("nested")).expect("the directory is created");
     std::fs::write(dir.path().join("nested/b.png"), b"b").expect("the file is written");
-    let stub = Stub::start(vec![
-        Reply::status(200),
-        Reply::status(200),
-        Reply::status(200),
+    let stub = Stub::start_by_path(vec![
+        ("/shots/pixeldelta/abc123/images/a.png", Reply::status(200)),
+        (
+            "/shots/pixeldelta/abc123/images/nested/b.png",
+            Reply::status(200),
+        ),
+        ("/shots/pixeldelta/abc123/manifest.json", Reply::status(200)),
     ]);
     let storage = Storage::s3(config(&stub.url()));
 
@@ -88,27 +96,53 @@ fn storing_a_snapshot_puts_the_images_before_the_manifest() {
         .expect("the snapshot is stored");
 
     let requests = stub.requests();
-    let targets: Vec<&str> = requests.iter().map(|r| r.target.as_str()).collect();
+    assert!(requests.iter().all(|r| r.method == "PUT"));
     assert_eq!(
-        targets,
-        vec![
+        requests.last().map(|r| r.target.as_str()),
+        Some("/shots/pixeldelta/abc123/manifest.json"),
+        "the manifest is the last request received"
+    );
+    let image_targets: BTreeSet<&str> = requests[..requests.len() - 1]
+        .iter()
+        .map(|r| r.target.as_str())
+        .collect();
+    assert_eq!(
+        image_targets,
+        BTreeSet::from([
             "/shots/pixeldelta/abc123/images/a.png",
             "/shots/pixeldelta/abc123/images/nested/b.png",
-            "/shots/pixeldelta/abc123/manifest.json",
-        ],
-        "the manifest is written last"
+        ])
     );
-    assert!(requests.iter().all(|r| r.method == "PUT"));
-    assert_eq!(requests[0].body, b"a");
+    let a = requests
+        .iter()
+        .find(|r| r.target == "/shots/pixeldelta/abc123/images/a.png")
+        .expect("a.png was requested");
+    assert_eq!(a.body, b"a");
+    let b = requests
+        .iter()
+        .find(|r| r.target == "/shots/pixeldelta/abc123/images/nested/b.png")
+        .expect("nested/b.png was requested");
+    assert_eq!(b.body, b"b");
 }
 
+/// `fetch` reads the manifest first, then sends the two image GETs
+/// concurrently, so their relative order is not fixed. What must hold is that
+/// the manifest is read before either image: it is the first request the
+/// stub receives, and the set of image GETs after it is exactly the expected
+/// set.
 #[test]
 fn fetching_reads_the_manifest_and_then_the_images() {
     let dest = tempfile::tempdir().expect("a temporary directory");
-    let stub = Stub::start(vec![
-        Reply::ok(br#"{"version":1,"files":["a.png","nested/b.png"]}"#),
-        Reply::ok(b"a"),
-        Reply::ok(b"b"),
+    let stub = Stub::start_by_path(vec![
+        (
+            "/shots/pixeldelta/abc123/manifest.json",
+            Reply::ok(br#"{"version":1,"files":["a.png","nested/b.png"]}"#),
+        ),
+        ("/shots/pixeldelta/abc123/images/a.png", Reply::ok(b"a")),
+        (
+            "/shots/pixeldelta/abc123/images/nested/b.png",
+            Reply::ok(b"b"),
+        ),
     ]);
     let storage = Storage::s3(config(&stub.url()));
 
@@ -121,6 +155,19 @@ fn fetching_reads_the_manifest_and_then_the_images() {
     assert_eq!(read(&dest.path().join("nested/b.png")), b"b");
     let requests = stub.requests();
     assert!(requests.iter().all(|r| r.method == "GET"));
+    assert_eq!(
+        requests.first().map(|r| r.target.as_str()),
+        Some("/shots/pixeldelta/abc123/manifest.json"),
+        "the manifest is the first request received"
+    );
+    let image_targets: BTreeSet<&str> = requests[1..].iter().map(|r| r.target.as_str()).collect();
+    assert_eq!(
+        image_targets,
+        BTreeSet::from([
+            "/shots/pixeldelta/abc123/images/a.png",
+            "/shots/pixeldelta/abc123/images/nested/b.png",
+        ])
+    );
 }
 
 #[test]
@@ -177,15 +224,23 @@ fn a_put_carries_the_type_of_what_it_stores() {
 /// outside the unreserved set has to reach the request line percent-encoded:
 /// `http::Uri` rejects a non-ASCII byte, and a `+` sent as it is would
 /// differ from the `%2B` the signature covers.
+/// The two image PUTs race, so only the set before the manifest, not their
+/// order, is asserted.
 #[test]
 fn a_name_outside_the_unreserved_set_is_encoded_in_the_request_line() {
     let dir = tempfile::tempdir().expect("a temporary directory");
     std::fs::write(dir.path().join("トップ.png"), b"a").expect("the file is written");
     std::fs::write(dir.path().join("a+b.png"), b"b").expect("the file is written");
-    let stub = Stub::start(vec![
-        Reply::status(200),
-        Reply::status(200),
-        Reply::status(200),
+    let stub = Stub::start_by_path(vec![
+        (
+            "/shots/pixeldelta/abc123/images/a%2Bb.png",
+            Reply::status(200),
+        ),
+        (
+            "/shots/pixeldelta/abc123/images/%E3%83%88%E3%83%83%E3%83%97.png",
+            Reply::status(200),
+        ),
+        ("/shots/pixeldelta/abc123/manifest.json", Reply::status(200)),
     ]);
     let storage = Storage::s3(config(&stub.url()));
 
@@ -194,14 +249,21 @@ fn a_name_outside_the_unreserved_set_is_encoded_in_the_request_line() {
         .expect("the snapshot is stored");
 
     let requests = stub.requests();
-    let targets: Vec<&str> = requests.iter().map(|r| r.target.as_str()).collect();
     assert_eq!(
-        targets,
-        vec![
+        requests.last().map(|r| r.target.as_str()),
+        Some("/shots/pixeldelta/abc123/manifest.json"),
+        "the manifest is the last request received"
+    );
+    let image_targets: BTreeSet<&str> = requests[..requests.len() - 1]
+        .iter()
+        .map(|r| r.target.as_str())
+        .collect();
+    assert_eq!(
+        image_targets,
+        BTreeSet::from([
             "/shots/pixeldelta/abc123/images/a%2Bb.png",
             "/shots/pixeldelta/abc123/images/%E3%83%88%E3%83%83%E3%83%97.png",
-            "/shots/pixeldelta/abc123/manifest.json",
-        ]
+        ])
     );
     assert!(requests.iter().all(|r| r.header("authorization").is_some()));
 }

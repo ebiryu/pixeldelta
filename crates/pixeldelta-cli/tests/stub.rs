@@ -3,9 +3,11 @@
 
 #![allow(dead_code)]
 
+use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{SocketAddr, TcpListener};
 use std::sync::mpsc::{channel, Receiver};
+use std::sync::Arc;
 
 /// A request the stub received.
 #[derive(Debug, Clone)]
@@ -77,6 +79,43 @@ impl Stub {
                 let request = read_request(&mut stream);
                 let _ = sender.send(request);
                 write_reply(&mut stream, &reply);
+            }
+        });
+
+        Stub { addr, received }
+    }
+
+    /// Answers requests by their target rather than by arrival order, because
+    /// a client that sends its requests concurrently does not guarantee which
+    /// one reaches the stub first.
+    ///
+    /// Each accepted connection is handled on its own thread, so requests in
+    /// flight at once do not block each other. `routes` pairs a request
+    /// target with the reply it gets; the stub accepts as many connections as
+    /// `routes` has entries and then stops.
+    pub fn start_by_path(routes: Vec<(&'static str, Reply)>) -> Stub {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("a local port");
+        let addr = listener.local_addr().expect("the bound address");
+        let (sender, received) = channel();
+        let expected = routes.len();
+        let routes: Arc<HashMap<&'static str, Reply>> = Arc::new(routes.into_iter().collect());
+
+        std::thread::spawn(move || {
+            for _ in 0..expected {
+                let Ok((stream, _)) = listener.accept() else {
+                    return;
+                };
+                let sender = sender.clone();
+                let routes = Arc::clone(&routes);
+                std::thread::spawn(move || {
+                    let mut stream = stream;
+                    let request = read_request(&mut stream);
+                    let reply = routes
+                        .get(request.target.as_str())
+                        .unwrap_or_else(|| panic!("no reply is stubbed for {}", request.target));
+                    let _ = sender.send(request);
+                    write_reply(&mut stream, reply);
+                });
             }
         });
 

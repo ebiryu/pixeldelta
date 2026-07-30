@@ -15,7 +15,9 @@
 //! a write that stopped halfway does not read as a complete snapshot.
 
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::paths::collect_pngs;
@@ -25,6 +27,50 @@ pub use crate::s3::S3Config;
 
 /// Version this build writes and reads.
 const MANIFEST_VERSION: u32 = 1;
+
+/// How many object requests run at once.
+///
+/// Fixed rather than sized to the CPU count: the wait on each request is for
+/// a network response, not CPU time, so a low core count should not throttle
+/// it down to a couple of requests in flight.
+const REQUEST_CONCURRENCY: usize = 16;
+
+/// The pool parallel object requests run on, built the first time it is
+/// needed.
+///
+/// A pool of its own, not rayon's global one: the global pool is sized to the
+/// CPU count and is also what comparison work in `run_dirs` uses, so blocking
+/// its workers on network responses would stall comparisons waiting for a
+/// free worker.
+///
+/// `None` when the pool could not be built, in which case callers fall back
+/// to running the same work sequentially on the calling thread.
+fn request_pool() -> Option<&'static rayon::ThreadPool> {
+    static POOL: OnceLock<Option<rayon::ThreadPool>> = OnceLock::new();
+    POOL.get_or_init(|| {
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(REQUEST_CONCURRENCY)
+            .build()
+            .ok()
+    })
+    .as_ref()
+}
+
+/// Runs `f` over `items`, in parallel on the request pool when one is
+/// available, sequentially on the calling thread otherwise.
+///
+/// Stops at the first error; which of several concurrent failures is
+/// returned is unspecified.
+fn parallel_try_for_each<T, F>(items: &[T], f: F) -> Result<(), StorageError>
+where
+    T: Sync,
+    F: Fn(&T) -> Result<(), StorageError> + Sync,
+{
+    match request_pool() {
+        Some(pool) => pool.install(|| items.par_iter().try_for_each(&f)),
+        None => items.iter().try_for_each(f),
+    }
+}
 
 /// The files a snapshot holds.
 #[derive(Serialize, Deserialize)]
@@ -159,14 +205,14 @@ impl Storage {
             });
         }
 
-        for file in &manifest.files {
+        parallel_try_for_each(&manifest.files, |file| {
             let rel = relative_path(key, file)?;
             let path = format!("{key}/images/{file}");
             let bytes = self
                 .get_object(&path)?
                 .ok_or(StorageError::MissingObject { path })?;
-            write(&dest.join(&rel), &bytes)?;
-        }
+            write(&dest.join(&rel), &bytes)
+        })?;
         Ok(manifest.files)
     }
 
@@ -183,10 +229,10 @@ impl Storage {
             .into_iter()
             .collect();
 
-        for file in &files {
+        parallel_try_for_each(&files, |file| {
             let bytes = read(&dir.join(file))?;
-            self.put_object(&format!("{key}/images/{file}"), &bytes)?;
-        }
+            self.put_object(&format!("{key}/images/{file}"), &bytes)
+        })?;
 
         // Written last: a key counts as stored once its manifest is there, so
         // a write that stopped halfway is not picked as a baseline.
@@ -214,9 +260,9 @@ impl Storage {
         images: &[(String, &[u8])],
     ) -> Result<Option<String>, StorageError> {
         validate_key(key)?;
-        for (rel, bytes) in images {
-            self.put_object(&format!("{key}/report/{rel}"), bytes)?;
-        }
+        parallel_try_for_each(images, |(rel, bytes)| {
+            self.put_object(&format!("{key}/report/{rel}"), bytes)
+        })?;
         let path = format!("{key}/report/index.html");
         self.put_object(&path, html)?;
         Ok(self.object_url(&path))
