@@ -40,8 +40,15 @@ pub struct CompareRun {
 #[derive(Debug, thiserror::Error)]
 pub enum CliError {
     /// An input image could not be read or decoded.
-    #[error(transparent)]
-    Decode(#[from] DecodeError),
+    ///
+    /// `DecodeError` names the reason only. The path is held here because a
+    /// `run` decodes every PNG under two directories, where the reason on its
+    /// own does not say which file failed.
+    #[error("{path}: {source}")]
+    Decode {
+        path: std::path::PathBuf,
+        source: DecodeError,
+    },
     /// The diff image could not be encoded.
     #[error(transparent)]
     Encode(#[from] EncodeError),
@@ -70,6 +77,14 @@ impl CliError {
     pub fn exit_code(&self) -> i32 {
         3
     }
+
+    /// Names the file a decode failure came from.
+    pub(crate) fn decode(path: &Path, source: DecodeError) -> Self {
+        Self::Decode {
+            path: path.to_path_buf(),
+            source,
+        }
+    }
 }
 
 /// Exit code standing for a verdict.
@@ -94,8 +109,8 @@ pub fn compare_files(
     opts: &CompareOptions,
     output: Option<&Path>,
 ) -> Result<CompareRun, CliError> {
-    let base_image = decode_file(base)?;
-    let head_image = decode_file(head)?;
+    let base_image = decode_file(base).map_err(|source| CliError::decode(base, source))?;
+    let head_image = decode_file(head).map_err(|source| CliError::decode(head, source))?;
 
     // The diff image is only rendered when it is going to be written.
     let opts = CompareOptions {

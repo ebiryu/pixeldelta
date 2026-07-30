@@ -97,8 +97,9 @@ fn compare_pair(
         std::fs::read(expected_path).map_err(|source| read_error(expected_path, source))?;
     let actual_bytes =
         std::fs::read(actual_path).map_err(|source| read_error(actual_path, source))?;
-    let expected = decode(&expected_bytes)?;
-    let actual = decode(&actual_bytes)?;
+    let expected =
+        decode(&expected_bytes).map_err(|source| CliError::decode(expected_path, source))?;
+    let actual = decode(&actual_bytes).map_err(|source| CliError::decode(actual_path, source))?;
 
     if expected.width() != actual.width() || expected.height() != actual.height() {
         return Ok(Entry {
@@ -173,7 +174,7 @@ fn only_one(rel: &str, path: &Path, category: Category) -> Result<Entry, CliErro
     let bytes = std::fs::read(path).map_err(|source| read_error(path, source))?;
     // Decoding it validates the file and reports a broken PNG here rather than
     // in the browser.
-    decode(&bytes)?;
+    decode(&bytes).map_err(|source| CliError::decode(path, source))?;
     let images = match category {
         Category::Added => Images {
             expected: None,
@@ -282,10 +283,7 @@ fn collect_pngs(root: &Path) -> Result<BTreeSet<String>, CliError> {
 }
 
 fn read_error(path: &Path, source: std::io::Error) -> CliError {
-    CliError::Decode(pixeldelta_io::DecodeError::Read {
-        path: PathBuf::from(path),
-        source,
-    })
+    CliError::decode(path, pixeldelta_io::DecodeError::Read { source })
 }
 
 fn write_error(path: &Path, source: std::io::Error) -> CliError {

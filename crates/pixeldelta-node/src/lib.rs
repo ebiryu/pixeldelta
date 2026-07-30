@@ -143,10 +143,13 @@ impl OwnedSource {
         }
     }
 
-    fn decode(&self) -> std::result::Result<Decoded, pixeldelta_io::DecodeError> {
+    /// Decodes the source. A `DecodeError` names the reason only, so a source
+    /// that came from a path names the file here; bytes have none to name.
+    fn decode(&self) -> Result<Decoded> {
         match self {
-            Self::Path(path) => decode_file(std::path::Path::new(path)),
-            Self::Bytes(bytes) => decode(bytes),
+            Self::Path(path) => decode_file(std::path::Path::new(path))
+                .map_err(|error| Error::from_reason(format!("{path}: {error}"))),
+            Self::Bytes(bytes) => decode(bytes).map_err(decode_error),
         }
     }
 }
@@ -156,8 +159,8 @@ impl Task for CompareTask {
     type JsValue = JsCompareResult;
 
     fn compute(&mut self) -> Result<Self::Output> {
-        let a = self.a.decode().map_err(decode_error)?;
-        let b = self.b.decode().map_err(decode_error)?;
+        let a = self.a.decode()?;
+        let b = self.b.decode()?;
         run(&a, &b, &self.options)
     }
 
@@ -188,8 +191,8 @@ pub fn compare_sync(
     options: Option<JsCompareOptions>,
 ) -> Result<JsCompareResult> {
     let options = convert::to_options(options.unwrap_or_default())?;
-    let a = OwnedSource::from(a).decode().map_err(decode_error)?;
-    let b = OwnedSource::from(b).decode().map_err(decode_error)?;
+    let a = OwnedSource::from(a).decode()?;
+    let b = OwnedSource::from(b).decode()?;
     run(&a, &b, &options)
 }
 

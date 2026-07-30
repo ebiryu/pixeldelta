@@ -237,14 +237,8 @@ fn entries_are_in_lexicographic_path_order() {
 /// When several files fail to decode, the reported error is the first one in
 /// lexicographic path order, not whichever comparison happens to fail first.
 ///
-/// `decode` reports neither a path nor any other detail identifying its input
-/// once the bytes are ruled out as a PNG, so the two broken files are given
-/// bytes that fail in distinguishable ways: the lexicographically first,
-/// `aaa_broken.png`, has no recognizable image signature at all
-/// (`DecodeError::UnsupportedFormat`), while the second, `zzz_broken.png`, has
-/// a PNG signature followed by nothing (`DecodeError::Malformed`). Getting the
-/// `UnsupportedFormat` variant back confirms the first one in path order is
-/// the one that surfaced.
+/// Both broken files are given the same bytes, so only the path in the error
+/// tells which of the two surfaced.
 #[test]
 fn the_reported_error_names_the_first_broken_file_in_path_order() {
     let dir = tempfile::tempdir().unwrap();
@@ -254,24 +248,62 @@ fn the_reported_error_names_the_first_broken_file_in_path_order() {
     write(&a.join("aaa_broken.png"), b"not an image at all");
     write(&e.join("mmm_good.png"), &png([9, 9, 9, 255], 4));
     write(&a.join("mmm_good.png"), &png([9, 9, 9, 255], 4));
-    write(
-        &e.join("zzz_broken.png"),
-        &[0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a],
-    );
-    write(
-        &a.join("zzz_broken.png"),
-        &[0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a],
-    );
+    write(&e.join("zzz_broken.png"), b"not an image at all");
+    write(&a.join("zzz_broken.png"), b"not an image at all");
 
     let error = run_dirs(&e, &a, 0.1, true, 0.0).expect_err("a broken PNG fails the run");
 
     assert!(
         matches!(
-            error,
-            CliError::Decode(DecodeError::UnsupportedFormat {
-                format: Format::Unknown
-            })
+            &error,
+            CliError::Decode {
+                path,
+                source: DecodeError::UnsupportedFormat {
+                    format: Format::Unknown,
+                },
+            } if path == &e.join("aaa_broken.png")
         ),
-        "expected the UnsupportedFormat error from aaa_broken.png, got {error}"
+        "expected the error to name expected/aaa_broken.png, got {error}"
+    );
+}
+
+/// A file present on one side only is decoded as well, and its failure names
+/// the path it came from.
+#[test]
+fn a_broken_file_on_one_side_only_is_named() {
+    let dir = tempfile::tempdir().unwrap();
+    let (e, a) = (dir.path().join("expected"), dir.path().join("actual"));
+
+    write(&e.join("kept.png"), &png([9, 9, 9, 255], 4));
+    write(&a.join("kept.png"), &png([9, 9, 9, 255], 4));
+    write(&a.join("added_broken.png"), b"not an image at all");
+
+    let error = run_dirs(&e, &a, 0.1, true, 0.0).expect_err("a broken PNG fails the run");
+
+    assert!(
+        matches!(&error, CliError::Decode { path, .. } if path == &a.join("added_broken.png")),
+        "expected the error to name actual/added_broken.png, got {error}"
+    );
+}
+
+/// A directory that cannot be read is reported with the path that failed,
+/// through the same error as a file that cannot be decoded.
+#[test]
+fn an_unreadable_input_names_the_path() {
+    let dir = tempfile::tempdir().unwrap();
+    let (e, a) = (dir.path().join("expected"), dir.path().join("actual"));
+    write(&a.join("only.png"), &png([9, 9, 9, 255], 4));
+
+    let error = run_dirs(&e, &a, 0.1, true, 0.0).expect_err("a missing directory fails the run");
+
+    assert!(
+        matches!(
+            &error,
+            CliError::Decode {
+                path,
+                source: DecodeError::Read { .. },
+            } if path == &e
+        ),
+        "expected the error to name the missing expected directory, got {error}"
     );
 }

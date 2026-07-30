@@ -235,15 +235,18 @@ fn a_file_decodes_the_same_as_its_bytes() {
     );
 }
 
+/// A file that cannot be opened is a read failure, which the caller can tell
+/// apart from bytes that are not a PNG. The path is not in the error: the
+/// caller that passed it in is the one that names it.
 #[test]
-fn a_missing_file_names_the_path_it_looked_for() {
+fn a_missing_file_is_a_read_error() {
     let path = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("absent.png");
     let _ = std::fs::remove_file(&path);
 
     let error = decode_file(&path).expect_err("the file is not there");
 
     assert!(
-        matches!(&error, DecodeError::Read { path: p, .. } if p == &path),
-        "expected a read error naming the path, got {error}"
+        matches!(&error, DecodeError::Read { .. }),
+        "expected a read error, got {error}"
     );
 }

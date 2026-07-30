@@ -11,7 +11,7 @@ mod png_encode;
 pub use format::Format;
 pub use png_encode::encode as encode_png;
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 /// A decoded RGBA8 image.
 ///
@@ -46,15 +46,16 @@ impl Decoded {
 }
 
 /// Reasons an image cannot be decoded.
+///
+/// No variant carries the path of the input. `decode` is given bytes, which
+/// have no path, so the caller that named the file is the one that names it
+/// in its own error.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum DecodeError {
     /// The file could not be read.
-    #[error("{path} could not be read: {source}")]
-    Read {
-        path: PathBuf,
-        source: std::io::Error,
-    },
+    #[error("the file could not be read: {source}")]
+    Read { source: std::io::Error },
     /// The bytes are an image of a format that is not supported.
     #[error("{format} images are not supported")]
     UnsupportedFormat { format: Format },
@@ -87,10 +88,9 @@ pub fn decode(bytes: &[u8]) -> Result<Decoded, DecodeError> {
 }
 
 /// Decodes an image from a file.
+///
+/// The error names the reason but not `path`; the caller holds it.
 pub fn decode_file(path: &Path) -> Result<Decoded, DecodeError> {
-    let bytes = std::fs::read(path).map_err(|source| DecodeError::Read {
-        path: path.to_path_buf(),
-        source,
-    })?;
+    let bytes = std::fs::read(path).map_err(|source| DecodeError::Read { source })?;
     decode(&bytes)
 }

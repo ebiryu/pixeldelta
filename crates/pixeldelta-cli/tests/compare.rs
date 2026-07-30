@@ -84,4 +84,27 @@ fn a_missing_input_is_an_error() {
         .expect_err("a missing file is reported");
 
     assert_eq!(error.exit_code(), 3);
+    assert!(
+        matches!(&error, CliError::Decode { path, .. } if path == &base),
+        "expected the error to name the missing file, got {error}"
+    );
+}
+
+/// The error names which of the two inputs failed to decode, which the reason
+/// on its own does not say.
+#[test]
+fn a_broken_input_names_the_file_it_came_from() {
+    let dir = tempfile::tempdir().expect("a temp dir");
+    let base = dir.path().join("base.png");
+    let head = dir.path().join("head.png");
+    write_png(&base, &[0, 0, 0, 255]);
+    std::fs::write(&head, b"not an image at all").expect("the fixture is writable");
+
+    let error: CliError = compare_files(&base, &head, &Default::default(), None)
+        .expect_err("a broken file is reported");
+
+    assert!(
+        matches!(&error, CliError::Decode { path, .. } if path == &head),
+        "expected the error to name the broken file, got {error}"
+    );
 }
