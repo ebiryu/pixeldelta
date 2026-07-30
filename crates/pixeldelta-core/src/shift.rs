@@ -3,13 +3,13 @@
 //! A cluster that is a moved element, not a changed one, matches the other
 //! image once shifted by the move vector. The search slides the cluster's
 //! rectangle over a small window of offsets and reports the one that turns it
-//! into a match, following the block-matching sketch in the design.
+//! into a match.
 //!
-//! Measuring every offset over the whole rectangle costs `288 * area`, which
-//! grows with the size of the cluster rather than with the amount of
-//! difference in it. [`displacement`] instead narrows the offsets through a
-//! ladder of sample densities, each cheaper than measuring the full rectangle,
-//! and only measures the survivors over the whole rectangle.
+//! Measuring every offset over the whole rectangle would cost `288 * area`,
+//! which grows with the size of a cluster rather than with the amount of
+//! difference in it. [`displacement`] narrows the offsets through a ladder of
+//! sample densities and measures only the survivors over the whole rectangle,
+//! which keeps the cost linear in the area.
 
 use crate::color::color_delta;
 use crate::image::{Image, BYTES_PER_PIXEL};
