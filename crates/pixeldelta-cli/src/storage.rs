@@ -33,7 +33,11 @@ const MANIFEST_VERSION: u32 = 1;
 /// Fixed rather than sized to the CPU count: the wait on each request is for
 /// a network response, not CPU time, so a low core count should not throttle
 /// it down to a couple of requests in flight.
-const REQUEST_CONCURRENCY: usize = 16;
+///
+/// The HTTP client keeps room for this many idle connections, so that the
+/// requests running at once cost one round trip each rather than a new
+/// handshake.
+pub(crate) const REQUEST_CONCURRENCY: usize = 16;
 
 /// The pool parallel object requests run on, built the first time it is
 /// needed.

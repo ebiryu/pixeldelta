@@ -15,6 +15,14 @@ const TIMEOUT_CONNECT: Duration = Duration::from_secs(10);
 /// Wait before each retry. Its length is the retry count, so 3 attempts in
 /// total.
 const RETRY_WAITS: [Duration; 2] = [Duration::from_millis(500), Duration::from_secs(1)];
+/// Idle connections the agent keeps, in total and for one host.
+///
+/// Both are the number of object requests the storage sends at once, and all
+/// of those go to the same host. `ureq` keeps 10 idle connections and 3 per
+/// host by default, and closes the rest as each request finishes, so the
+/// requests beyond that would open a connection and complete a TLS handshake
+/// apiece instead of reusing one.
+const MAX_IDLE_CONNECTIONS: usize = crate::storage::REQUEST_CONCURRENCY;
 
 /// What a request came back with.
 pub(crate) struct Answer {
@@ -39,6 +47,8 @@ fn agent_with(timeout_global: Duration) -> ureq::Agent {
             .http_status_as_error(false)
             .timeout_global(Some(timeout_global))
             .timeout_connect(Some(TIMEOUT_CONNECT))
+            .max_idle_connections(MAX_IDLE_CONNECTIONS)
+            .max_idle_connections_per_host(MAX_IDLE_CONNECTIONS)
             .build(),
     )
 }
@@ -84,6 +94,23 @@ mod tests {
 
     fn zero_waits(n: usize) -> Vec<Duration> {
         vec![Duration::ZERO; n]
+    }
+
+    /// The pool has to hold every connection the storage keeps in flight, or
+    /// the requests past its size open one apiece. Nothing else in a test can
+    /// observe that, since it shows up as handshakes rather than as answers.
+    #[test]
+    fn the_pool_holds_one_connection_per_parallel_request() {
+        let config = agent().config().clone();
+
+        assert_eq!(
+            config.max_idle_connections_per_host(),
+            crate::storage::REQUEST_CONCURRENCY
+        );
+        assert_eq!(
+            config.max_idle_connections(),
+            crate::storage::REQUEST_CONCURRENCY
+        );
     }
 
     #[test]
