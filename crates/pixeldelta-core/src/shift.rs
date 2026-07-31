@@ -28,12 +28,21 @@ const SEARCH_RADIUS: i32 = 8;
 /// cover the whole rectangle.
 const RUNGS: [(u32, usize); 2] = [(4096, 16), (65536, 4)];
 
+/// Smallest rectangle the search runs over, in pixels.
+///
+/// Over fewer pixels than this, one of the 288 offsets is likely to fall
+/// below `max_delta` on a color that repeats within the window rather than on
+/// the content having moved, so the offset it would report does not stand for
+/// a move.
+const MIN_AREA: u64 = 16;
+
 /// The offset at which `bounds` of `a` best matches `b`, when that match is
 /// close enough to call the cluster a move rather than a change.
 ///
 /// The result is the non-zero offset `(dx, dy)` with the lowest mean color
 /// delta over the rectangle, provided that mean is within `max_delta`. Offsets
-/// that push the rectangle outside the image are not considered, so that a
+/// that push the rectangle outside the image are not considered, and a
+/// rectangle smaller than [`MIN_AREA`] is not searched at all, so that a
 /// handful of pixels cannot produce a false match. `None` means no shift in the
 /// window turns the region into a match, so it is a genuine change.
 ///
@@ -52,6 +61,9 @@ pub fn displacement(
     let (bx, by) = (bounds.x as i32, bounds.y as i32);
     let (bw, bh) = (bounds.width as i32, bounds.height as i32);
     let area = u64::from(bounds.width) * u64::from(bounds.height);
+    if area < MIN_AREA {
+        return None;
+    }
 
     // The whole rectangle, shifted, has to stay inside the image.
     let fits = |&(dx, dy): &(i32, i32)| {
@@ -288,6 +300,32 @@ mod tests {
         let bounds = rect(100, 100, 160, 80);
 
         assert_eq!(displacement(&a, &b, bounds, MAX_DELTA), None);
+    }
+
+    #[test]
+    fn a_rectangle_below_the_minimum_area_is_not_searched() {
+        // A 2x2 block moved by (2, 0). The cluster covering both positions is
+        // 4x2, which is 8 pixels: too few for a mean over them to tell a move
+        // from a color that happens to repeat within the window.
+        let base = canvas(32, 16, rect(4, 6, 2, 2), WHITE);
+        let head = canvas(32, 16, rect(6, 6, 2, 2), WHITE);
+        let a = Image::from_rgba8(32, 16, &base).unwrap();
+        let b = Image::from_rgba8(32, 16, &head).unwrap();
+        let bounds = rect(4, 6, 4, 2);
+
+        assert_eq!(displacement(&a, &b, bounds, MAX_DELTA), None);
+    }
+
+    #[test]
+    fn a_rectangle_at_the_minimum_area_is_searched() {
+        // 4x4 is the smallest rectangle the search runs over.
+        let base = canvas(32, 16, rect(4, 6, 2, 4), WHITE);
+        let head = canvas(32, 16, rect(6, 6, 2, 4), WHITE);
+        let a = Image::from_rgba8(32, 16, &base).unwrap();
+        let b = Image::from_rgba8(32, 16, &head).unwrap();
+        let bounds = rect(4, 6, 4, 4);
+
+        assert_eq!(displacement(&a, &b, bounds, MAX_DELTA), Some((2, 0)));
     }
 
     #[test]
