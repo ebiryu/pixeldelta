@@ -69,7 +69,7 @@ body {
   margin: 0; background: var(--bg); color: var(--text);
   font-family: var(--sans); line-height: 1.5; -webkit-font-smoothing: antialiased;
 }
-.wrap { max-width: 1080px; margin: 0 auto; padding: 0 20px 64px; }
+.wrap { max-width: 1440px; margin: 0 auto; padding: 0 20px 64px; }
 
 .app-header {
   position: sticky; top: 0; z-index: 10;
@@ -169,7 +169,10 @@ body {
 .stage[data-mode="side"] > .m-side { display: grid; grid-template-columns: 1fr 1fr; }
 .stage[data-mode="slider"] > .m-overlay,
 .stage[data-mode="onion"] > .m-overlay { display: block; }
-.m-diff { max-width: 380px; }
+/* `--cap` turns the image aspect ratio into a width, and is absent when the
+   entry has no image size. `min-width` wins over `max-width`, so a full-page
+   screenshot, whose cap is a sliver, still gets a readable width. */
+.m-diff, .m-overlay { max-width: var(--cap, none); min-width: min(100%, 520px); }
 .pane { position: relative; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--surface-2); }
 .pane .cap {
   position: absolute; top: 6px; left: 6px; z-index: 3;
@@ -178,6 +181,24 @@ body {
   color: var(--text-dim); border: 1px solid var(--border);
 }
 .pane img { display: block; width: 100%; height: auto; }
+/* The frame is sized to the image so the cluster rectangles, placed as
+   percentages of it, stay aligned with the image at every zoom level. In
+   `fit` mode it takes the pane's full width; the zoom levels below fix it to
+   a multiple of the image's natural width (`--iw`) and let the pane scroll. */
+.frame { position: relative; width: 100%; }
+.stage[data-zoom="1"] .frame { width: var(--iw); }
+.stage[data-zoom="2"] .frame { width: calc(var(--iw) * 2); }
+.stage[data-zoom="4"] .frame { width: calc(var(--iw) * 4); }
+.stage:not([data-zoom="fit"]) .pane { overflow: auto; max-height: 52vh; }
+/* `max-content` keeps the pane from leaving an empty band beside an image
+   whose zoomed width is under the space available. The side-by-side panes are
+   grid items and keep their column's width, which `max-content` would widen
+   past the row. */
+.stage:not([data-zoom="fit"]) > .m-diff,
+.stage:not([data-zoom="fit"]) > .m-overlay {
+  width: max-content; max-width: 100%;
+}
+.stage:not([data-zoom="fit"]) .pane img { image-rendering: pixelated; }
 .cluster-rect { position: absolute; border: 1.5px dashed var(--accent); pointer-events: none; z-index: 2; }
 
 .stack { position: relative; }
@@ -212,7 +233,9 @@ tbody tr:last-child td { border-bottom: 0; }
 .ssim-bar .track { width: 54px; height: 5px; border-radius: 3px; background: var(--border); overflow: hidden; }
 .ssim-bar .fill { height: 100%; background: var(--matched); }
 
-.single { display: grid; grid-template-columns: minmax(0, 340px); gap: 10px; }
+/* A reference view of one image, with no diff to line up against, so it takes
+   a fixed width rather than the aspect ratio's. */
+.single { display: grid; grid-template-columns: minmax(0, 720px); gap: 10px; }
 .inline-note { margin: 12px 0 0; font-size: 12.5px; color: var(--text-dim); }
 
 #theme {
@@ -231,12 +254,12 @@ tbody tr:last-child td { border-bottom: 0; }
 <body>
 <header class="app-header"><div class="wrap"><div class="brandrow"><div class="mark">Δ</div><div><h1>pixeldelta report</h1><div class="sub">expected/ ⟷ actual/</div></div><span class="verdict-pill"><span class="dot"></span> FAIL</span></div><div class="summary" id="summary"><button class="chip c-changed" aria-pressed="true" data-cat="changed"><span class="swatch"></span><span class="n">1</span> changed</button><button class="chip c-added" aria-pressed="true" data-cat="added"><span class="swatch"></span><span class="n">1</span> added</button><button class="chip c-removed" aria-pressed="true" data-cat="removed"><span class="swatch"></span><span class="n">1</span> removed</button><button class="chip c-size" aria-pressed="true" data-cat="size"><span class="swatch"></span><span class="n">1</span> size mismatch</button><button class="chip c-tolerated" aria-pressed="true" data-cat="tolerated"><span class="swatch"></span><span class="n">1</span> tolerated</button><button class="chip c-matched" aria-pressed="false" data-cat="matched"><span class="swatch"></span><span class="n">1</span> matched</button></div><div class="params"><span><b>threshold</b> 0.10</span><span><b>tolerance</b> 0.001</span><span><b>antialiasing</b> on</span><span><b>layout-shift</b> on</span></div></div></header>
 <main class="wrap"><div class="entries" id="entries">
-<article class="entry changed open" data-cat="changed"><div class="entry-head"><span class="stripe"></span><span class="path"><span class="dir">components/button/</span>primary.png</span><span class="badge changed">changed</span><div class="metrics"><div class="metric"><div class="v">1,284</div><div class="k">diff px</div></div><div class="metric"><div class="v">2.01%</div><div class="k">ratio</div></div><div class="metric"><div class="v">14</div><div class="k">clusters</div></div></div><svg class="chev" width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div><div class="body"><div class="viewer-bar"><div class="seg" role="tablist"><button aria-pressed="true" data-mode="diff">Diff</button><button aria-pressed="false" data-mode="side">Side by side</button><button aria-pressed="false" data-mode="slider">Slider</button><button aria-pressed="false" data-mode="onion">Onion</button></div><div class="onion-ctl">expected<input type="range" min="0" max="100" value="50" class="op-range">actual</div></div><div class="stage" data-mode="diff"><div class="pane m-diff"><span class="cap">diff</span><img src="images/diff/components/button/primary.png" alt="diff" loading="lazy"><div class="cluster-rect" style="left:4.375%;top:69.000%;width:30.000%;height:17.000%"></div><div class="cluster-rect" style="left:5.625%;top:20.000%;width:41.250%;height:8.000%"></div></div><div class="grid3 m-side"><div class="pane"><span class="cap">expected</span><img src="images/expected/components/button/primary.png" alt="expected" loading="lazy"></div><div class="pane"><span class="cap">actual</span><img src="images/actual/components/button/primary.png" alt="actual" loading="lazy"></div></div><div class="pane stack m-overlay"><div class="base"><img src="images/expected/components/button/primary.png" alt="expected" loading="lazy"></div><div class="layer top"><img src="images/actual/components/button/primary.png" alt="actual" loading="lazy"></div><div class="handle"></div></div></div><div class="clusters"><h3>Clusters</h3><table><thead><tr><th>#</th><th>Bounds</th><th>Diff px</th><th>Classification</th><th>SSIM</th></tr></thead><tbody><tr><td>1</td><td>x14 y138 · 96×34</td><td>612</td><td><span class="tag moved">moved 4px down</span></td><td><span class="ssim-bar"><span class="track"><span class="fill" style="width:98%;background:var(--matched)"></span></span>0.981</span></td></tr><tr><td>2</td><td>x18 y40 · 132×16</td><td>672</td><td><span class="tag color">color change</span></td><td><span class="ssim-bar"><span class="track"><span class="fill" style="width:41%;background:var(--changed)"></span></span>0.412</span></td></tr></tbody></table><p class="inline-note">The 2 clusters with the most differing pixels are listed; 12 more are not.</p></div></div></article>
-<article class="entry size" data-cat="size"><div class="entry-head"><span class="stripe"></span><span class="path"><span class="dir">pages/</span>dashboard.png</span><span class="badge size">size mismatch</span><div class="metrics"><div class="metric"><div class="v">1280×864</div><div class="k">expected</div></div><div class="metric"><div class="v">1280×912</div><div class="k">actual</div></div></div><svg class="chev" width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div><div class="body"><div class="grid3" style="grid-template-columns:1fr 1fr"><div class="pane"><span class="cap">expected</span><img src="images/expected/pages/dashboard.png" alt="expected" loading="lazy"></div><div class="pane"><span class="cap">actual</span><img src="images/actual/pages/dashboard.png" alt="actual" loading="lazy"></div></div><p class="inline-note">Dimensions differ, so no diff was computed.</p></div></article>
-<article class="entry added" data-cat="added"><div class="entry-head"><span class="stripe"></span><span class="path"><span class="dir">components/</span>toast.png</span><span class="badge added">added</span><div class="metrics"><div class="metric"><div class="v">only in actual/</div><div class="k">source</div></div></div><svg class="chev" width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div><div class="body"><div class="single"><div class="pane"><span class="cap">actual</span><img src="images/actual/components/toast.png" alt="actual" loading="lazy"></div></div></div></article>
-<article class="entry removed" data-cat="removed"><div class="entry-head"><span class="stripe"></span><span class="path"><span class="dir">components/</span>banner-legacy.png</span><span class="badge removed">removed</span><div class="metrics"><div class="metric"><div class="v">only in expected/</div><div class="k">source</div></div></div><svg class="chev" width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div><div class="body"><div class="single"><div class="pane"><span class="cap">expected</span><img src="images/expected/components/banner-legacy.png" alt="expected" loading="lazy"></div></div></div></article>
-<article class="entry tolerated" data-cat="tolerated"><div class="entry-head"><span class="stripe"></span><span class="path"><span class="dir">components/</span>badge.png</span><span class="badge tolerated">tolerated</span><div class="metrics"><div class="metric"><div class="v">12</div><div class="k">diff px</div></div><div class="metric"><div class="v">0.07%</div><div class="k">ratio</div></div><div class="metric"><div class="v">1</div><div class="k">clusters</div></div></div><svg class="chev" width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div><div class="body"><div class="viewer-bar"><div class="seg" role="tablist"><button aria-pressed="true" data-mode="diff">Diff</button><button aria-pressed="false" data-mode="side">Side by side</button><button aria-pressed="false" data-mode="slider">Slider</button><button aria-pressed="false" data-mode="onion">Onion</button></div><div class="onion-ctl">expected<input type="range" min="0" max="100" value="50" class="op-range">actual</div></div><div class="stage" data-mode="diff"><div class="pane m-diff"><span class="cap">diff</span><img src="images/diff/components/badge.png" alt="diff" loading="lazy"><div class="cluster-rect" style="left:1.250%;top:3.000%;width:3.125%;height:3.000%"></div></div><div class="grid3 m-side"><div class="pane"><span class="cap">expected</span><img src="images/expected/components/badge.png" alt="expected" loading="lazy"></div><div class="pane"><span class="cap">actual</span><img src="images/actual/components/badge.png" alt="actual" loading="lazy"></div></div><div class="pane stack m-overlay"><div class="base"><img src="images/expected/components/badge.png" alt="expected" loading="lazy"></div><div class="layer top"><img src="images/actual/components/badge.png" alt="actual" loading="lazy"></div><div class="handle"></div></div></div><div class="clusters"><h3>Clusters</h3><table><thead><tr><th>#</th><th>Bounds</th><th>Diff px</th><th>Classification</th><th>SSIM</th></tr></thead><tbody><tr><td>1</td><td>x4 y6 · 10×6</td><td>12</td><td><span class="tag color">color change</span></td><td><span class="ssim-bar"><span class="track"><span class="fill" style="width:100%;background:var(--matched)"></span></span>0.995</span></td></tr></tbody></table></div><p class="inline-note">Within the allowed difference ratio, so it does not fail the run.</p></div></article>
-<article class="entry matched" data-cat="matched"><div class="entry-head"><span class="stripe"></span><span class="path"><span class="dir">components/</span>checkbox.png</span><span class="badge matched">matched</span><div class="metrics"><div class="metric"><div class="v">0</div><div class="k">diff px</div></div></div><svg class="chev" width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div><div class="body"><div class="single"><div class="pane"><span class="cap">expected = actual</span><img src="images/expected/components/checkbox.png" alt="expected = actual" loading="lazy"></div></div><p class="inline-note">Identical within the threshold, so expected and actual are the same image.</p></div></article>
+<article class="entry changed open" data-cat="changed"><div class="entry-head"><span class="stripe"></span><span class="path"><span class="dir">components/button/</span>primary.png</span><span class="badge changed">changed</span><div class="metrics"><div class="metric"><div class="v">1,284</div><div class="k">diff px</div></div><div class="metric"><div class="v">2.01%</div><div class="k">ratio</div></div><div class="metric"><div class="v">14</div><div class="k">clusters</div></div></div><svg class="chev" width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div><div class="body"><div class="viewer-bar"><div class="seg" role="tablist"><button aria-pressed="true" data-mode="diff">Diff</button><button aria-pressed="false" data-mode="side">Side by side</button><button aria-pressed="false" data-mode="slider">Slider</button><button aria-pressed="false" data-mode="onion">Onion</button></div><div class="seg" role="tablist"><button aria-pressed="true" data-zoom="fit">fit</button><button aria-pressed="false" data-zoom="1">1:1</button><button aria-pressed="false" data-zoom="2">2x</button><button aria-pressed="false" data-zoom="4">4x</button></div><div class="onion-ctl">expected<input type="range" min="0" max="100" value="50" class="op-range">actual</div></div><div class="stage" data-mode="diff" data-zoom="fit" style="--cap:calc(52vh * 320 / 200);--iw:320px"><div class="pane m-diff"><span class="cap">diff</span><div class="frame"><img src="images/diff/components/button/primary.png" alt="diff" loading="lazy"><div class="cluster-rect" style="left:4.375%;top:69.000%;width:30.000%;height:17.000%"></div><div class="cluster-rect" style="left:5.625%;top:20.000%;width:41.250%;height:8.000%"></div></div></div><div class="grid3 m-side"><div class="pane"><span class="cap">expected</span><div class="frame"><img src="images/expected/components/button/primary.png" alt="expected" loading="lazy"></div></div><div class="pane"><span class="cap">actual</span><div class="frame"><img src="images/actual/components/button/primary.png" alt="actual" loading="lazy"></div></div></div><div class="pane stack m-overlay"><div class="frame"><div class="base"><img src="images/expected/components/button/primary.png" alt="expected" loading="lazy"></div><div class="layer top"><img src="images/actual/components/button/primary.png" alt="actual" loading="lazy"></div><div class="handle"></div></div></div></div><div class="clusters"><h3>Clusters</h3><table><thead><tr><th>#</th><th>Bounds</th><th>Diff px</th><th>Classification</th><th>SSIM</th></tr></thead><tbody><tr><td>1</td><td>x14 y138 · 96×34</td><td>612</td><td><span class="tag moved">moved 4px down</span></td><td><span class="ssim-bar"><span class="track"><span class="fill" style="width:98%;background:var(--matched)"></span></span>0.981</span></td></tr><tr><td>2</td><td>x18 y40 · 132×16</td><td>672</td><td><span class="tag color">color change</span></td><td><span class="ssim-bar"><span class="track"><span class="fill" style="width:41%;background:var(--changed)"></span></span>0.412</span></td></tr></tbody></table><p class="inline-note">The 2 clusters with the most differing pixels are listed; 12 more are not.</p></div></div></article>
+<article class="entry size" data-cat="size"><div class="entry-head"><span class="stripe"></span><span class="path"><span class="dir">pages/</span>dashboard.png</span><span class="badge size">size mismatch</span><div class="metrics"><div class="metric"><div class="v">1280×864</div><div class="k">expected</div></div><div class="metric"><div class="v">1280×912</div><div class="k">actual</div></div></div><svg class="chev" width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div><div class="body"><div class="grid3" style="grid-template-columns:1fr 1fr"><div class="pane"><span class="cap">expected</span><div class="frame"><img src="images/expected/pages/dashboard.png" alt="expected" loading="lazy"></div></div><div class="pane"><span class="cap">actual</span><div class="frame"><img src="images/actual/pages/dashboard.png" alt="actual" loading="lazy"></div></div></div><p class="inline-note">Dimensions differ, so no diff was computed.</p></div></article>
+<article class="entry added" data-cat="added"><div class="entry-head"><span class="stripe"></span><span class="path"><span class="dir">components/</span>toast.png</span><span class="badge added">added</span><div class="metrics"><div class="metric"><div class="v">only in actual/</div><div class="k">source</div></div></div><svg class="chev" width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div><div class="body"><div class="single"><div class="pane"><span class="cap">actual</span><div class="frame"><img src="images/actual/components/toast.png" alt="actual" loading="lazy"></div></div></div></div></article>
+<article class="entry removed" data-cat="removed"><div class="entry-head"><span class="stripe"></span><span class="path"><span class="dir">components/</span>banner-legacy.png</span><span class="badge removed">removed</span><div class="metrics"><div class="metric"><div class="v">only in expected/</div><div class="k">source</div></div></div><svg class="chev" width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div><div class="body"><div class="single"><div class="pane"><span class="cap">expected</span><div class="frame"><img src="images/expected/components/banner-legacy.png" alt="expected" loading="lazy"></div></div></div></div></article>
+<article class="entry tolerated" data-cat="tolerated"><div class="entry-head"><span class="stripe"></span><span class="path"><span class="dir">components/</span>badge.png</span><span class="badge tolerated">tolerated</span><div class="metrics"><div class="metric"><div class="v">12</div><div class="k">diff px</div></div><div class="metric"><div class="v">0.07%</div><div class="k">ratio</div></div><div class="metric"><div class="v">1</div><div class="k">clusters</div></div></div><svg class="chev" width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div><div class="body"><div class="viewer-bar"><div class="seg" role="tablist"><button aria-pressed="true" data-mode="diff">Diff</button><button aria-pressed="false" data-mode="side">Side by side</button><button aria-pressed="false" data-mode="slider">Slider</button><button aria-pressed="false" data-mode="onion">Onion</button></div><div class="seg" role="tablist"><button aria-pressed="true" data-zoom="fit">fit</button><button aria-pressed="false" data-zoom="1">1:1</button><button aria-pressed="false" data-zoom="2">2x</button><button aria-pressed="false" data-zoom="4">4x</button></div><div class="onion-ctl">expected<input type="range" min="0" max="100" value="50" class="op-range">actual</div></div><div class="stage" data-mode="diff" data-zoom="fit" style="--cap:calc(52vh * 320 / 200);--iw:320px"><div class="pane m-diff"><span class="cap">diff</span><div class="frame"><img src="images/diff/components/badge.png" alt="diff" loading="lazy"><div class="cluster-rect" style="left:1.250%;top:3.000%;width:3.125%;height:3.000%"></div></div></div><div class="grid3 m-side"><div class="pane"><span class="cap">expected</span><div class="frame"><img src="images/expected/components/badge.png" alt="expected" loading="lazy"></div></div><div class="pane"><span class="cap">actual</span><div class="frame"><img src="images/actual/components/badge.png" alt="actual" loading="lazy"></div></div></div><div class="pane stack m-overlay"><div class="frame"><div class="base"><img src="images/expected/components/badge.png" alt="expected" loading="lazy"></div><div class="layer top"><img src="images/actual/components/badge.png" alt="actual" loading="lazy"></div><div class="handle"></div></div></div></div><div class="clusters"><h3>Clusters</h3><table><thead><tr><th>#</th><th>Bounds</th><th>Diff px</th><th>Classification</th><th>SSIM</th></tr></thead><tbody><tr><td>1</td><td>x4 y6 · 10×6</td><td>12</td><td><span class="tag color">color change</span></td><td><span class="ssim-bar"><span class="track"><span class="fill" style="width:100%;background:var(--matched)"></span></span>0.995</span></td></tr></tbody></table></div><p class="inline-note">Within the allowed difference ratio, so it does not fail the run.</p></div></article>
+<article class="entry matched" data-cat="matched"><div class="entry-head"><span class="stripe"></span><span class="path"><span class="dir">components/</span>checkbox.png</span><span class="badge matched">matched</span><div class="metrics"><div class="metric"><div class="v">0</div><div class="k">diff px</div></div></div><svg class="chev" width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div><div class="body"><div class="single"><div class="pane"><span class="cap">expected = actual</span><div class="frame"><img src="images/expected/components/checkbox.png" alt="expected = actual" loading="lazy"></div></div></div><p class="inline-note">Identical within the threshold, so expected and actual are the same image.</p></div></article>
 </div></main>
 <button id="theme">theme</button>
 <script>
@@ -257,26 +280,39 @@ chips.forEach(c => c.addEventListener('click', () => {
 }));
 applyFilter();
 
-// Viewer: mode switch, slider drag, onion opacity.
+// Viewer: mode switch, zoom switch, slider drag, onion opacity, side-by-side
+// scroll sync.
 document.querySelectorAll('.entry').forEach(entry => {
   const stage = entry.querySelector('.stage');
   if (!stage) return;
-  const segBtns = entry.querySelectorAll('.seg button');
-  segBtns.forEach(b => b.addEventListener('click', () => {
-    segBtns.forEach(x => x.setAttribute('aria-pressed', 'false'));
+  // Each segmented control only touches the buttons in its own group: the
+  // zoom control sits next to the mode control in the same `.seg` markup,
+  // and a shared selector would reset the wrong group's `aria-pressed`.
+  const modeBtns = entry.querySelectorAll('.seg button[data-mode]');
+  modeBtns.forEach(b => b.addEventListener('click', () => {
+    modeBtns.forEach(x => x.setAttribute('aria-pressed', 'false'));
     b.setAttribute('aria-pressed', 'true');
     const mode = b.dataset.mode;
     stage.dataset.mode = mode;
     const onionCtl = entry.querySelector('.onion-ctl');
     if (onionCtl) onionCtl.style.display = mode === 'onion' ? 'flex' : 'none';
   }));
+  const zoomBtns = entry.querySelectorAll('.seg button[data-zoom]');
+  zoomBtns.forEach(b => b.addEventListener('click', () => {
+    zoomBtns.forEach(x => x.setAttribute('aria-pressed', 'false'));
+    b.setAttribute('aria-pressed', 'true');
+    stage.dataset.zoom = b.dataset.zoom;
+  }));
   const handle = stage.querySelector('.handle');
-  const stack = stage.querySelector('.stack');
-  if (handle && stack) {
+  // The overlay's frame is sized to the image at the current zoom level, so
+  // it is what the drag position is measured against, not the `.stack` pane
+  // around it (which can be wider once the pane scrolls).
+  const frame = stage.querySelector('.m-overlay .frame');
+  if (handle && frame) {
     let drag = false;
     const move = e => {
       if (!drag) return;
-      const r = stack.getBoundingClientRect();
+      const r = frame.getBoundingClientRect();
       const x = ((e.touches ? e.touches[0].clientX : e.clientX) - r.left) / r.width;
       stage.style.setProperty('--split', Math.max(0, Math.min(1, x)) * 100 + '%');
     };
@@ -289,6 +325,27 @@ document.querySelectorAll('.entry').forEach(entry => {
   }
   const op = entry.querySelector('.op-range');
   if (op) op.addEventListener('input', () => stage.style.setProperty('--op', op.value / 100));
+  // Mirror scroll position between the two side-by-side panes, so scrolling
+  // one at a zoom level moves the other to the same spot. Setting the other
+  // pane's position queues a scroll event of its own, which the browser fires
+  // before the next frame's callbacks, so `syncing` is cleared a frame later
+  // rather than on the next line. Clearing it synchronously would let the
+  // mirrored scroll write back to the pane the reader is dragging, which
+  // fights the drag whenever the two panes can scroll different distances.
+  const sidePanes = entry.querySelectorAll('.m-side .pane');
+  if (sidePanes.length === 2) {
+    const [a, b] = sidePanes;
+    let syncing = false;
+    const mirror = (from, to) => () => {
+      if (syncing) return;
+      syncing = true;
+      to.scrollLeft = from.scrollLeft;
+      to.scrollTop = from.scrollTop;
+      requestAnimationFrame(() => { syncing = false; });
+    };
+    a.addEventListener('scroll', mirror(a, b));
+    b.addEventListener('scroll', mirror(b, a));
+  }
 });
 
 // Theme toggle.

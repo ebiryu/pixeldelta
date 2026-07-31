@@ -209,22 +209,53 @@ fn write_changed_body(
          <button aria-pressed=\"false\" data-mode=\"side\">Side by side</button>\
          <button aria-pressed=\"false\" data-mode=\"slider\">Slider</button>\
          <button aria-pressed=\"false\" data-mode=\"onion\">Onion</button></div>\
+         <div class=\"seg\" role=\"tablist\">\
+         <button aria-pressed=\"true\" data-zoom=\"fit\">fit</button>\
+         <button aria-pressed=\"false\" data-zoom=\"1\">1:1</button>\
+         <button aria-pressed=\"false\" data-zoom=\"2\">2x</button>\
+         <button aria-pressed=\"false\" data-zoom=\"4\">4x</button></div>\
          <div class=\"onion-ctl\">expected<input type=\"range\" min=\"0\" max=\"100\" value=\"50\" class=\"op-range\">actual</div></div>",
     );
 
-    out.push_str("<div class=\"stage\" data-mode=\"diff\"><div class=\"pane m-diff\"><span class=\"cap\">diff</span>");
+    write!(
+        out,
+        "<div class=\"stage\" data-mode=\"diff\" data-zoom=\"fit\"{}>",
+        stage_cap(entry)
+    )
+    .unwrap();
+    out.push_str("<div class=\"pane m-diff\"><span class=\"cap\">diff</span><div class=\"frame\">");
     img(out, src(entry, Side::Diff).as_deref(), "diff");
     write_cluster_rects(out, entry);
-    out.push_str("</div><div class=\"grid3 m-side\">");
+    out.push_str("</div></div><div class=\"grid3 m-side\">");
     pane(out, "expected", src(entry, Side::Expected));
     pane(out, "actual", src(entry, Side::Actual));
-    out.push_str("</div><div class=\"pane stack m-overlay\"><div class=\"base\">");
+    out.push_str(
+        "</div><div class=\"pane stack m-overlay\"><div class=\"frame\"><div class=\"base\">",
+    );
     img(out, src(entry, Side::Expected).as_deref(), "expected");
     out.push_str("</div><div class=\"layer top\">");
     img(out, src(entry, Side::Actual).as_deref(), "actual");
-    out.push_str("</div><div class=\"handle\"></div></div></div>");
+    out.push_str("</div><div class=\"handle\"></div></div></div></div>");
 
     write_clusters(out, entry);
+}
+
+/// Widths the viewer is sized by, written as a `style` attribute.
+///
+/// `--cap` limits how wide the pane grows at the `fit` zoom level. At `fit`
+/// the frame fills the pane, so a tall screenshot would push the rest of the
+/// entry off the screen. Limiting the height instead would letterbox the
+/// image inside the frame and move it away from the cluster rectangles, which
+/// are placed as percentages of the frame. Expressing the height limit as a
+/// width through the aspect ratio keeps the frame and the image the same box.
+///
+/// `--iw` holds the image's natural width, which the zoom levels other than
+/// `fit` scale the frame to.
+fn stage_cap(entry: &Entry) -> String {
+    match entry.image_size {
+        Some([w, h]) if h != 0 => format!(" style=\"--cap:calc(52vh * {w} / {h});--iw:{w}px\""),
+        _ => String::new(),
+    }
 }
 
 fn write_cluster_rects(out: &mut String, entry: &Entry) {
@@ -338,12 +369,12 @@ fn single(out: &mut String, cap: &str, url: Option<String>) {
 fn pane(out: &mut String, cap: &str, url: Option<String>) {
     write!(
         out,
-        "<div class=\"pane\"><span class=\"cap\">{}</span>",
+        "<div class=\"pane\"><span class=\"cap\">{}</span><div class=\"frame\">",
         escape(cap)
     )
     .unwrap();
     img(out, url.as_deref(), cap);
-    out.push_str("</div>");
+    out.push_str("</div></div>");
 }
 
 /// Writes one image tag.
