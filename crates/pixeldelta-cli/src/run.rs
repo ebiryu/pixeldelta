@@ -16,7 +16,9 @@ use crate::CliError;
 /// report shows where each difference sits, whether it moved, and the diff
 /// image. `threshold` and `antialiasing` come from the caller. `tolerance_ratio`
 /// is the fraction of an image's pixels that may differ and still count as
-/// `tolerated` rather than `changed`.
+/// `tolerated` rather than `changed`. `max_clusters` is the number of clusters
+/// an entry reports, the largest by differing pixels, and 0 reports every
+/// cluster.
 ///
 /// When `images_dir` is `Some`, each entry's images are written under it at
 /// `pixeldelta_report::asset_path(&entry.path, side)` as soon as that entry is
@@ -30,6 +32,7 @@ pub fn run_dirs(
     threshold: f32,
     antialiasing: bool,
     tolerance_ratio: f64,
+    max_clusters: usize,
     images_dir: Option<&Path>,
 ) -> Result<Report, CliError> {
     let expected_files = collect_pngs(expected)?;
@@ -79,6 +82,7 @@ pub fn run_dirs(
                     &opts,
                     &probe,
                     tolerance_ratio,
+                    max_clusters,
                     images_dir,
                 ),
                 (false, true) => only_one(rel, &actual.join(rel), Category::Added, images_dir),
@@ -110,6 +114,7 @@ pub fn run_dirs(
 /// `probe` decides whether the pair differs at all and `opts` produces what a
 /// differing entry holds, so the pairs that match are never measured with the
 /// second one.
+#[allow(clippy::too_many_arguments)]
 fn compare_pair(
     rel: &str,
     expected_path: &Path,
@@ -117,6 +122,7 @@ fn compare_pair(
     opts: &CompareOptions,
     probe: &CompareOptions,
     tolerance_ratio: f64,
+    max_clusters: usize,
     images_dir: Option<&Path>,
 ) -> Result<Entry, CliError> {
     let expected_bytes =
@@ -136,6 +142,7 @@ fn compare_pair(
             diff_pixels: 0,
             diff_ratio: 0.0,
             clusters: Vec::new(),
+            omitted_clusters: 0,
             expected_size: Some([expected.width(), expected.height()]),
             actual_size: Some([actual.width(), actual.height()]),
             image_size: None,
@@ -158,6 +165,7 @@ fn compare_pair(
             diff_pixels: 0,
             diff_ratio: 0.0,
             clusters: Vec::new(),
+            omitted_clusters: 0,
             expected_size: None,
             actual_size: None,
             image_size: None,
@@ -184,12 +192,17 @@ fn compare_pair(
     write_image(images_dir, rel, Side::Expected, &expected_bytes)?;
     write_image(images_dir, rel, Side::Actual, &actual_bytes)?;
     write_image(images_dir, rel, Side::Diff, &diff_png)?;
+    let (clusters, omitted_clusters) = pixeldelta_report::cap_clusters(
+        result.clusters.iter().map(to_cluster).collect(),
+        max_clusters,
+    );
     Ok(Entry {
         path: rel.to_owned(),
         category,
         diff_pixels: result.diff_pixels,
         diff_ratio: result.diff_ratio,
-        clusters: result.clusters.iter().map(to_cluster).collect(),
+        clusters,
+        omitted_clusters,
         expected_size: None,
         actual_size: None,
         image_size: Some([expected.width(), expected.height()]),
@@ -236,6 +249,7 @@ fn only_one(
         diff_pixels: 0,
         diff_ratio: 0.0,
         clusters: Vec::new(),
+        omitted_clusters: 0,
         expected_size: None,
         actual_size: None,
         image_size: None,

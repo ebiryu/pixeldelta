@@ -274,6 +274,7 @@ fn options<'a>(repo: &'a Path, actual: &'a Path, storage: &'a Storage) -> CiOpti
         threshold: 0.1,
         antialiasing: true,
         tolerance_ratio: 0.0,
+        max_clusters: pixeldelta_cli::DEFAULT_MAX_CLUSTERS,
         report: None,
         report_url: None,
         json: None,

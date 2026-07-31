@@ -22,7 +22,7 @@ Compared against `5046eb28` with threshold 0.1, anti-aliasing excluded, toleranc
 
 | path | diff pixels | ratio | clusters | min ssim |
 | --- | --: | --: | --- | --: |
-| `components/button/primary.png` | 1284 | 2.01% | 1 moved (+0, +4), 1 changed | 0.412 |
+| `components/button/primary.png` | 1284 | 2.01% | 1 moved (+0, +4), 1 changed, 12 not listed | 0.412 |
 
 #### size mismatch
 

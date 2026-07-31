@@ -43,7 +43,8 @@ expression: "json(&sample::sample_report())"
           "diffPixels": 672,
           "ssim": 0.412
         }
-      ]
+      ],
+      "omittedClusters": 12
     },
     {
       "path": "pages/dashboard.png",

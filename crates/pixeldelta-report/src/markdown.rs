@@ -116,7 +116,7 @@ fn changed_table(out: &mut String, report: &Report) {
             entry.path,
             entry.diff_pixels,
             entry.diff_ratio * 100.0,
-            clusters(&entry.clusters),
+            clusters(&entry.clusters, entry.omitted_clusters),
             min_ssim(&entry.clusters),
         );
     }
@@ -127,7 +127,7 @@ fn changed_table(out: &mut String, report: &Report) {
 ///
 /// A cluster carries a displacement when the layout-shift search matched the
 /// content at an offset, which separates a move from a change in place.
-fn clusters(clusters: &[Cluster]) -> String {
+fn clusters(clusters: &[Cluster], omitted: u32) -> String {
     if clusters.is_empty() {
         return "-".to_owned();
     }
@@ -162,6 +162,9 @@ fn clusters(clusters: &[Cluster]) -> String {
     }
     if changed > 0 {
         parts.push(format!("{changed} changed"));
+    }
+    if omitted > 0 {
+        parts.push(format!("{omitted} not listed"));
     }
     parts.join(", ")
 }
@@ -237,15 +240,22 @@ mod tests {
 
     #[test]
     fn clusters_sharing_an_offset_report_it_once() {
-        let summary = clusters(&[moved(Some([0, 4])), moved(Some([0, 4]))]);
+        let summary = clusters(&[moved(Some([0, 4])), moved(Some([0, 4]))], 0);
 
         assert_eq!(summary, "2 moved (+0, +4)");
     }
 
     #[test]
     fn clusters_with_different_offsets_report_each() {
-        let summary = clusters(&[moved(Some([0, 4])), moved(Some([2, 0])), moved(None)]);
+        let summary = clusters(&[moved(Some([0, 4])), moved(Some([2, 0])), moved(None)], 0);
 
         assert_eq!(summary, "2 moved (+0, +4; +2, +0), 1 changed");
+    }
+
+    #[test]
+    fn omitted_clusters_add_a_not_listed_part() {
+        let summary = clusters(&[moved(Some([0, 4])), moved(None)], 3750);
+
+        assert_eq!(summary, "1 moved (+0, +4), 1 changed, 3750 not listed");
     }
 }

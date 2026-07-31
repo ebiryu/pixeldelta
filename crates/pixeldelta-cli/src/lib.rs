@@ -25,6 +25,10 @@ pub use run::{run_dirs, write_report};
 pub use sigv4::Credentials;
 pub use storage::{S3Config, Storage, StorageError};
 
+/// How many clusters one entry reports by default, the ones with the most
+/// differing pixels.
+pub const DEFAULT_MAX_CLUSTERS: usize = 100;
+
 /// Summary of a `compare` run.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CompareRun {

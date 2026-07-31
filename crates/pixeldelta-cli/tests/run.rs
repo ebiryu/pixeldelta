@@ -31,6 +31,27 @@ fn write(path: &Path, bytes: &[u8]) {
     std::fs::write(path, bytes).unwrap();
 }
 
+/// An expected/actual pair of one-row PNGs of the given width, where `actual`
+/// differs from `expected` only within `ranges` (each a half-open `[start,
+/// end)` span of pixel indices). Ranges separated by at least one matching
+/// pixel form distinct eight-connected clusters, since a single row only
+/// connects horizontally.
+fn row_with_clusters(width: u32, ranges: &[(u32, u32)]) -> (Vec<u8>, Vec<u8>) {
+    let base = [10, 10, 10, 255];
+    let diff = [200, 0, 0, 255];
+    let mut expected_rgba = Vec::new();
+    let mut actual_rgba = Vec::new();
+    for x in 0..width {
+        expected_rgba.extend_from_slice(&base);
+        let differs = ranges.iter().any(|&(start, end)| x >= start && x < end);
+        actual_rgba.extend_from_slice(if differs { &diff } else { &base });
+    }
+    (
+        encode_png(width, 1, &expected_rgba).expect("the row encodes"),
+        encode_png(width, 1, &actual_rgba).expect("the row encodes"),
+    )
+}
+
 /// Builds an expected/actual pair of directories covering every category.
 fn fixture() -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
@@ -70,6 +91,7 @@ fn every_pairing_lands_in_the_right_category() {
         0.1,
         true,
         0.0,
+        pixeldelta_cli::DEFAULT_MAX_CLUSTERS,
         None,
     )
     .expect("the run finishes");
@@ -101,6 +123,7 @@ fn a_changed_entry_carries_its_diff_image_and_clusters() {
         0.1,
         true,
         0.0,
+        pixeldelta_cli::DEFAULT_MAX_CLUSTERS,
         None,
     )
     .expect("the run finishes");
@@ -124,7 +147,16 @@ fn matching_directories_pass() {
     write(&e.join("a.png"), &png([9, 9, 9, 255], 4));
     write(&a.join("a.png"), &png([9, 9, 9, 255], 4));
 
-    let report = run_dirs(&e, &a, 0.1, true, 0.0, None).expect("the run finishes");
+    let report = run_dirs(
+        &e,
+        &a,
+        0.1,
+        true,
+        0.0,
+        pixeldelta_cli::DEFAULT_MAX_CLUSTERS,
+        None,
+    )
+    .expect("the run finishes");
     assert!(report.summary().passed);
 }
 
@@ -139,8 +171,16 @@ fn a_small_difference_is_tolerated_when_the_ratio_allows_it() {
         &png_with_one_diff([200, 0, 0, 255], [10, 10, 10, 255], width),
     );
 
-    let tolerated =
-        run_dirs(&e, &a, 0.1, true, 0.01, None).expect("the run finishes with the ratio allowed");
+    let tolerated = run_dirs(
+        &e,
+        &a,
+        0.1,
+        true,
+        0.01,
+        pixeldelta_cli::DEFAULT_MAX_CLUSTERS,
+        None,
+    )
+    .expect("the run finishes with the ratio allowed");
     assert_eq!(
         category_of(&tolerated.entries, "a.png"),
         &Category::Tolerated
@@ -149,8 +189,16 @@ fn a_small_difference_is_tolerated_when_the_ratio_allows_it() {
     assert_eq!(tolerated.summary().changed, 0);
     assert!(tolerated.summary().passed);
 
-    let changed =
-        run_dirs(&e, &a, 0.1, true, 0.0, None).expect("the run finishes with no tolerance");
+    let changed = run_dirs(
+        &e,
+        &a,
+        0.1,
+        true,
+        0.0,
+        pixeldelta_cli::DEFAULT_MAX_CLUSTERS,
+        None,
+    )
+    .expect("the run finishes with no tolerance");
     assert_eq!(category_of(&changed.entries, "a.png"), &Category::Changed);
     assert!(!changed.summary().passed);
 }
@@ -165,6 +213,7 @@ fn write_report_emits_the_requested_files() {
         0.1,
         true,
         0.0,
+        pixeldelta_cli::DEFAULT_MAX_CLUSTERS,
         Some(&out),
     )
     .unwrap();
@@ -192,6 +241,7 @@ fn write_report_writes_diff_images_as_files_and_the_html_has_no_data_uri() {
         0.1,
         true,
         0.0,
+        pixeldelta_cli::DEFAULT_MAX_CLUSTERS,
         Some(&out),
     )
     .unwrap();
@@ -220,6 +270,7 @@ fn run_dirs_with_no_images_dir_writes_nothing() {
         0.1,
         true,
         0.0,
+        pixeldelta_cli::DEFAULT_MAX_CLUSTERS,
         None,
     )
     .expect("the run finishes");
@@ -252,7 +303,16 @@ fn entries_are_in_lexicographic_path_order() {
     write(&e.join("bbb_top.png"), &png([0, 0, 0, 255], 4));
     write(&a.join("bbb_top.png"), &png([0, 0, 0, 255], 8));
 
-    let report = run_dirs(&e, &a, 0.1, true, 0.0, None).expect("the run finishes");
+    let report = run_dirs(
+        &e,
+        &a,
+        0.1,
+        true,
+        0.0,
+        pixeldelta_cli::DEFAULT_MAX_CLUSTERS,
+        None,
+    )
+    .expect("the run finishes");
 
     let paths: Vec<&str> = report.entries.iter().map(|e| e.path.as_str()).collect();
     assert_eq!(
@@ -284,7 +344,16 @@ fn the_reported_error_names_the_first_broken_file_in_path_order() {
     write(&e.join("zzz_broken.png"), b"not an image at all");
     write(&a.join("zzz_broken.png"), b"not an image at all");
 
-    let error = run_dirs(&e, &a, 0.1, true, 0.0, None).expect_err("a broken PNG fails the run");
+    let error = run_dirs(
+        &e,
+        &a,
+        0.1,
+        true,
+        0.0,
+        pixeldelta_cli::DEFAULT_MAX_CLUSTERS,
+        None,
+    )
+    .expect_err("a broken PNG fails the run");
 
     assert!(
         matches!(
@@ -311,7 +380,16 @@ fn a_broken_file_on_one_side_only_is_named() {
     write(&a.join("kept.png"), &png([9, 9, 9, 255], 4));
     write(&a.join("added_broken.png"), b"not an image at all");
 
-    let error = run_dirs(&e, &a, 0.1, true, 0.0, None).expect_err("a broken PNG fails the run");
+    let error = run_dirs(
+        &e,
+        &a,
+        0.1,
+        true,
+        0.0,
+        pixeldelta_cli::DEFAULT_MAX_CLUSTERS,
+        None,
+    )
+    .expect_err("a broken PNG fails the run");
 
     assert!(
         matches!(&error, CliError::Decode { path, .. } if path == &a.join("added_broken.png")),
@@ -327,8 +405,16 @@ fn an_unreadable_input_names_the_path() {
     let (e, a) = (dir.path().join("expected"), dir.path().join("actual"));
     write(&a.join("only.png"), &png([9, 9, 9, 255], 4));
 
-    let error =
-        run_dirs(&e, &a, 0.1, true, 0.0, None).expect_err("a missing directory fails the run");
+    let error = run_dirs(
+        &e,
+        &a,
+        0.1,
+        true,
+        0.0,
+        pixeldelta_cli::DEFAULT_MAX_CLUSTERS,
+        None,
+    )
+    .expect_err("a missing directory fails the run");
 
     assert!(
         matches!(
@@ -340,4 +426,62 @@ fn an_unreadable_input_names_the_path() {
         ),
         "expected the error to name the missing expected directory, got {error}"
     );
+}
+
+/// The eight clusters `row_with_clusters` shared by these two tests produces:
+/// six single-pixel clusters and three wider ones, so a cap smaller than the
+/// total exercises both which ones are kept and how many are left out.
+const CLUSTER_RANGES: [(u32, u32); 8] = [
+    (2, 3),   // 1px
+    (5, 6),   // 1px
+    (10, 15), // 5px, the largest
+    (20, 21), // 1px
+    (30, 34), // 4px, the second largest
+    (40, 41), // 1px
+    (50, 53), // 3px, the third largest
+    (60, 61), // 1px
+];
+
+#[test]
+fn max_clusters_caps_the_reported_clusters_to_the_largest() {
+    let dir = tempfile::tempdir().unwrap();
+    let (e, a) = (dir.path().join("expected"), dir.path().join("actual"));
+    let (expected_bytes, actual_bytes) = row_with_clusters(64, &CLUSTER_RANGES);
+    write(&e.join("row.png"), &expected_bytes);
+    write(&a.join("row.png"), &actual_bytes);
+
+    let report = run_dirs(&e, &a, 0.1, true, 0.0, 3, None).expect("the run finishes");
+
+    let entry = report
+        .entries
+        .iter()
+        .find(|entry| entry.path == "row.png")
+        .expect("the row is compared");
+
+    assert_eq!(entry.clusters.len(), 3);
+    assert_eq!(entry.omitted_clusters, 5);
+
+    let mut diffs: Vec<u64> = entry.clusters.iter().map(|c| c.diff_pixels).collect();
+    diffs.sort_unstable();
+    assert_eq!(diffs, vec![3, 4, 5]);
+}
+
+#[test]
+fn a_max_clusters_of_zero_reports_every_cluster() {
+    let dir = tempfile::tempdir().unwrap();
+    let (e, a) = (dir.path().join("expected"), dir.path().join("actual"));
+    let (expected_bytes, actual_bytes) = row_with_clusters(64, &CLUSTER_RANGES);
+    write(&e.join("row.png"), &expected_bytes);
+    write(&a.join("row.png"), &actual_bytes);
+
+    let report = run_dirs(&e, &a, 0.1, true, 0.0, 0, None).expect("the run finishes");
+
+    let entry = report
+        .entries
+        .iter()
+        .find(|entry| entry.path == "row.png")
+        .expect("the row is compared");
+
+    assert_eq!(entry.clusters.len(), 8);
+    assert_eq!(entry.omitted_clusters, 0);
 }

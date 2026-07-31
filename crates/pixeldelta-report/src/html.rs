@@ -147,7 +147,8 @@ fn write_metrics(out: &mut String, entry: &Entry) {
         Category::Changed | Category::Tolerated => {
             metric(out, &group(entry.diff_pixels), "diff px");
             metric(out, &format!("{:.2}%", entry.diff_ratio * 100.0), "ratio");
-            metric(out, &entry.clusters.len().to_string(), "clusters");
+            let total = entry.clusters.len() as u64 + entry.omitted_clusters as u64;
+            metric(out, &group(total), "clusters");
         }
         Category::SizeMismatch => {
             metric(out, &size_text(entry.expected_size), "expected");
@@ -223,7 +224,7 @@ fn write_changed_body(
     img(out, src(entry, Side::Actual).as_deref(), "actual");
     out.push_str("</div><div class=\"handle\"></div></div></div>");
 
-    write_clusters(out, &entry.clusters);
+    write_clusters(out, entry);
 }
 
 fn write_cluster_rects(out: &mut String, entry: &Entry) {
@@ -244,8 +245,8 @@ fn write_cluster_rects(out: &mut String, entry: &Entry) {
     }
 }
 
-fn write_clusters(out: &mut String, clusters: &[Cluster]) {
-    if clusters.is_empty() {
+fn write_clusters(out: &mut String, entry: &Entry) {
+    if entry.clusters.is_empty() {
         return;
     }
     out.push_str(
@@ -253,7 +254,7 @@ fn write_clusters(out: &mut String, clusters: &[Cluster]) {
          <th>#</th><th>Bounds</th><th>Diff px</th><th>Classification</th><th>SSIM</th>\
          </tr></thead><tbody>",
     );
-    for (i, c) in clusters.iter().enumerate() {
+    for (i, c) in entry.clusters.iter().enumerate() {
         let (label, tag) = classify(c);
         write!(
             out,
@@ -271,7 +272,17 @@ fn write_clusters(out: &mut String, clusters: &[Cluster]) {
         )
         .unwrap();
     }
-    out.push_str("</tbody></table></div>");
+    out.push_str("</tbody></table>");
+    if entry.omitted_clusters > 0 {
+        write!(
+            out,
+            "<p class=\"inline-note\">The {n} clusters with the most differing pixels are listed; {m} more are not.</p>",
+            n = group(entry.clusters.len() as u64),
+            m = group(entry.omitted_clusters as u64),
+        )
+        .unwrap();
+    }
+    out.push_str("</div>");
 }
 
 /// Labels a cluster as a move or a content change from its displacement.

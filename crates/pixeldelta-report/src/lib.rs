@@ -84,6 +84,10 @@ pub struct Entry {
     pub diff_pixels: u64,
     pub diff_ratio: f64,
     pub clusters: Vec<Cluster>,
+    /// How many further clusters the entry has that are not in `clusters`,
+    /// left out by the cap on how many one entry reports.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub omitted_clusters: u32,
     /// `[width, height]` of each side, present only for a size mismatch.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub expected_size: Option<[u32; 2]>,
@@ -125,6 +129,49 @@ pub struct Summary {
     pub passed: bool,
 }
 
+fn is_zero(count: &u32) -> bool {
+    *count == 0
+}
+
+/// Keeps the `max` clusters with the most differing pixels, and reports how
+/// many were left out.
+///
+/// The kept clusters stay in the order they were given, so an entry below the
+/// cap is reported exactly as it was. Clusters with the same count of
+/// differing pixels are kept in that order too, so which ones survive the cap
+/// does not depend on the sort. A `max` of 0 keeps every cluster.
+pub fn cap_clusters(clusters: Vec<Cluster>, max: usize) -> (Vec<Cluster>, u32) {
+    if max == 0 || clusters.len() <= max {
+        return (clusters, 0);
+    }
+    let omitted = (clusters.len() - max) as u32;
+
+    // Partitioning the positions rather than sorting them costs time linear in
+    // the number of clusters, which is what an entry with tens of thousands of
+    // them makes worth doing. The tie on the count of differing pixels goes to
+    // the earlier position, so the boundary of the cap does not depend on how
+    // the partition happened to move equal elements.
+    let mut positions: Vec<usize> = (0..clusters.len()).collect();
+    positions.select_nth_unstable_by(max - 1, |&a, &b| {
+        clusters[b]
+            .diff_pixels
+            .cmp(&clusters[a].diff_pixels)
+            .then(a.cmp(&b))
+    });
+    positions.truncate(max);
+    positions.sort_unstable();
+
+    // Reading the kept positions in ascending order rebuilds the list in the
+    // order the clusters came in.
+    let mut kept = Vec::with_capacity(max);
+    for (position, cluster) in clusters.into_iter().enumerate() {
+        if kept.len() < max && positions[kept.len()] == position {
+            kept.push(cluster);
+        }
+    }
+    (kept, omitted)
+}
+
 impl Report {
     /// Counts the entries by category.
     pub fn summary(&self) -> Summary {
@@ -163,11 +210,72 @@ mod tests {
             diff_pixels: 0,
             diff_ratio: 0.0,
             clusters: Vec::new(),
+            omitted_clusters: 0,
             expected_size: None,
             actual_size: None,
             image_size: None,
             images: Images::default(),
         }
+    }
+
+    fn cluster(diff_pixels: u64) -> Cluster {
+        Cluster {
+            x: 0,
+            y: 0,
+            width: 1,
+            height: 1,
+            diff_pixels,
+            displacement: None,
+            ssim: None,
+        }
+    }
+
+    #[test]
+    fn cap_clusters_keeps_the_largest_in_the_given_order_and_counts_the_rest() {
+        let clusters = vec![cluster(1), cluster(5), cluster(3), cluster(4), cluster(2)];
+
+        let (kept, omitted) = cap_clusters(clusters, 3);
+
+        // The three largest, as they were given rather than sorted into
+        // descending order (5, 4, 3).
+        let diffs: Vec<u64> = kept.iter().map(|c| c.diff_pixels).collect();
+        assert_eq!(diffs, vec![5, 3, 4]);
+        assert_eq!(omitted, 2);
+    }
+
+    #[test]
+    fn a_cap_of_zero_keeps_every_cluster_and_omits_none() {
+        let clusters = vec![cluster(1), cluster(5), cluster(3)];
+
+        let (kept, omitted) = cap_clusters(clusters.clone(), 0);
+
+        assert_eq!(kept, clusters);
+        assert_eq!(omitted, 0);
+    }
+
+    #[test]
+    fn fewer_clusters_than_the_cap_leaves_the_list_untouched() {
+        let clusters = vec![cluster(1), cluster(5)];
+
+        let (kept, omitted) = cap_clusters(clusters.clone(), 10);
+
+        assert_eq!(kept, clusters);
+        assert_eq!(omitted, 0);
+    }
+
+    #[test]
+    fn clusters_tied_at_the_cap_boundary_keep_the_earlier_one() {
+        // Three clusters tied at 5 differing pixels; only two fit under the
+        // cap of 3 alongside the single cluster at 10.
+        let clusters = vec![cluster(5), cluster(10), cluster(5), cluster(5), cluster(1)];
+
+        let (kept, omitted) = cap_clusters(clusters, 3);
+
+        // The earlier two of the tied clusters (indices 0 and 2) survive,
+        // the later tied one (index 3) is dropped along with the smallest.
+        let diffs: Vec<u64> = kept.iter().map(|c| c.diff_pixels).collect();
+        assert_eq!(diffs, vec![5, 10, 5]);
+        assert_eq!(omitted, 2);
     }
 
     #[test]

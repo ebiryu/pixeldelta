@@ -29,6 +29,9 @@ pub struct CiOptions<'a> {
     /// Fraction of an image's pixels that may differ and still count as
     /// tolerated rather than changed.
     pub tolerance_ratio: f64,
+    /// Clusters an entry reports, the ones with the most differing pixels. 0
+    /// reports every cluster.
+    pub max_clusters: usize,
     /// Write the HTML report into this directory as index.html.
     pub report: Option<&'a Path>,
     /// Where the report will be readable, for runs that publish it somewhere
@@ -96,6 +99,7 @@ pub fn ci(opts: &CiOptions) -> Result<CiRun, CliError> {
         opts.threshold,
         opts.antialiasing,
         opts.tolerance_ratio,
+        opts.max_clusters,
         opts.report,
     )?;
     write_report(&report, None, opts.json, opts.junit)?;

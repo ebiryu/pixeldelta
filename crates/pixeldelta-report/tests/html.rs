@@ -37,6 +37,7 @@ fn a_path_with_a_space_and_non_ascii_is_percent_encoded_in_the_src() {
             diff_pixels: 0,
             diff_ratio: 0.0,
             clusters: vec![],
+            omitted_clusters: 0,
             expected_size: None,
             actual_size: None,
             image_size: None,

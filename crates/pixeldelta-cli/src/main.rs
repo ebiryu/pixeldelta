@@ -69,6 +69,9 @@ struct RunArgs {
     /// Fraction of an image's pixels that may differ and still pass, in [0, 1].
     #[arg(long, default_value_t = 0.0)]
     tolerance_ratio: f64,
+    /// Clusters an entry reports, the ones with the most differing pixels. 0 reports every cluster.
+    #[arg(long, default_value_t = pixeldelta_cli::DEFAULT_MAX_CLUSTERS)]
+    max_clusters: usize,
 }
 
 #[derive(Args)]
@@ -120,6 +123,9 @@ struct CiArgs {
     /// Fraction of an image's pixels that may differ and still pass, in [0, 1].
     #[arg(long, default_value_t = 0.0)]
     tolerance_ratio: f64,
+    /// Clusters an entry reports, the ones with the most differing pixels. 0 reports every cluster.
+    #[arg(long, default_value_t = pixeldelta_cli::DEFAULT_MAX_CLUSTERS)]
+    max_clusters: usize,
 }
 
 fn main() -> ExitCode {
@@ -160,6 +166,7 @@ fn run_ci(args: CiArgs) -> ExitCode {
         threshold: args.threshold,
         antialiasing: !args.no_antialiasing,
         tolerance_ratio: args.tolerance_ratio,
+        max_clusters: args.max_clusters,
         report: args.report.as_deref(),
         report_url: args.report_url.as_deref(),
         json: args.json.as_deref(),
@@ -242,6 +249,7 @@ fn run(args: RunArgs) -> ExitCode {
         args.threshold,
         !args.no_antialiasing,
         args.tolerance_ratio,
+        args.max_clusters,
         args.report.as_deref(),
     ) {
         Ok(report) => report,
