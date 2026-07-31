@@ -11,6 +11,8 @@
 //! sample densities and measures only the survivors over the whole rectangle,
 //! which keeps the cost linear in the area.
 
+use std::sync::LazyLock;
+
 use crate::color::color_delta;
 use crate::image::{Image, BYTES_PER_PIXEL};
 use crate::region::Rect;
@@ -51,25 +53,28 @@ pub fn displacement(
     let (bw, bh) = (bounds.width as i32, bounds.height as i32);
     let area = u64::from(bounds.width) * u64::from(bounds.height);
 
-    // Offsets come in order of increasing magnitude; the rank each one carries
-    // through the rungs is its position in that order, so the final tie-break
-    // still favors the smallest shift.
-    let mut candidates: Vec<(usize, (i32, i32))> = offsets()
-        .enumerate()
-        .filter(|&(_, (dx, dy))| {
-            // The whole rectangle, shifted, has to stay inside the image.
-            bx + dx >= 0 && by + dy >= 0 && bx + dx + bw <= width && by + dy + bh <= height
-        })
-        .collect();
-    if candidates.is_empty() {
-        return None;
+    // The whole rectangle, shifted, has to stay inside the image.
+    let fits = |&(dx, dy): &(i32, i32)| {
+        bx + dx >= 0 && by + dy >= 0 && bx + dx + bw <= width && by + dy + bh <= height
+    };
+
+    // A rung whose sample already covers the whole rectangle has nothing left
+    // to narrow, so a rectangle below the first budget goes straight to the
+    // full measurement over every offset that fits. That is the path most
+    // clusters take, and it holds no list of its own.
+    if step_for(area, RUNGS[0].0) == 1 {
+        return best_of(OFFSETS.iter().filter(|o| fits(o)).copied(), a, b, bounds)
+            .and_then(|(mean, offset)| (mean <= max_delta).then_some(offset));
     }
+
+    // Offsets are in order of increasing magnitude, and each rung puts its
+    // survivors back in that order, so the position in the list is what the
+    // tie-break between equally good samples reads.
+    let mut candidates: Vec<(i32, i32)> = OFFSETS.iter().filter(|o| fits(o)).copied().collect();
 
     for &(budget, keep) in &RUNGS {
         let step = step_for(area, budget);
         if step == 1 {
-            // The sample would cover the whole rectangle, so there is nothing
-            // left to narrow: go straight to the full measurement below.
             break;
         }
         if candidates.len() <= keep {
@@ -78,42 +83,54 @@ pub fn displacement(
 
         let mut scored: Vec<(f32, usize, (i32, i32))> = candidates
             .iter()
-            .map(|&(rank, offset)| (mean_at(a, b, bounds, offset, step), rank, offset))
+            .enumerate()
+            .map(|(rank, &offset)| (mean_at(a, b, bounds, offset, step), rank, offset))
             .collect();
         scored.sort_by(|x, y| x.0.total_cmp(&y.0).then(x.1.cmp(&y.1)));
         scored.truncate(keep);
-        candidates = scored
-            .into_iter()
-            .map(|(_, rank, offset)| (rank, offset))
-            .collect();
+        scored.sort_by_key(|&(_, rank, _)| rank);
+        candidates = scored.into_iter().map(|(_, _, offset)| offset).collect();
     }
 
-    candidates.sort_by_key(|&(rank, _)| rank);
+    best_of(candidates.into_iter(), a, b, bounds)
+        .and_then(|(mean, offset)| (mean <= max_delta).then_some(offset))
+}
+
+/// The offset with the lowest mean color delta over the whole rectangle, with
+/// that mean, or `None` when `offsets` is empty.
+///
+/// `offsets` must come in order of increasing magnitude: a strict compare
+/// keeps the first of several equally good matches, which is then the
+/// smallest shift.
+fn best_of(
+    offsets: impl Iterator<Item = (i32, i32)>,
+    a: &Image<'_>,
+    b: &Image<'_>,
+    bounds: Rect,
+) -> Option<(f32, (i32, i32))> {
     let mut best: Option<(f32, (i32, i32))> = None;
-    for (_, offset) in candidates {
+    for offset in offsets {
         let mean = mean_at(a, b, bounds, offset, 1);
-        // A strict compare keeps the smallest shift among equally good
-        // matches, since candidates are walked in order of increasing
-        // magnitude.
         if best.is_none_or(|(lowest, _)| mean < lowest) {
             best = Some((mean, offset));
         }
     }
-
-    best.filter(|&(mean, _)| mean <= max_delta)
-        .map(|(_, offset)| offset)
+    best
 }
 
 /// The offsets to try, without `(0, 0)`, ordered by increasing magnitude so
 /// that the closest of several equal matches is the one kept.
-fn offsets() -> impl Iterator<Item = (i32, i32)> {
+///
+/// Held once rather than built per call: the search runs once per cluster, and
+/// a screenshot whose text was re-rendered produces tens of thousands of them.
+static OFFSETS: LazyLock<Vec<(i32, i32)>> = LazyLock::new(|| {
     let mut all: Vec<(i32, i32)> = (-SEARCH_RADIUS..=SEARCH_RADIUS)
         .flat_map(|dy| (-SEARCH_RADIUS..=SEARCH_RADIUS).map(move |dx| (dx, dy)))
         .filter(|&(dx, dy)| (dx, dy) != (0, 0))
         .collect();
     all.sort_by_key(|&(dx, dy)| (dx * dx + dy * dy, dy, dx));
-    all.into_iter()
-}
+    all
+});
 
 /// Stride at which sampling `area` pixels visits at most `budget` of them: `1`
 /// when the area already fits the budget, otherwise the smallest stride whose
