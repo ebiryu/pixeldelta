@@ -3,7 +3,7 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use pixeldelta_core::{compare, CompareOptions, DiffStyle, Image, Verdict};
+use pixeldelta_core::{compare, CompareOptions, DiffStyle, FailFast, Image, Verdict};
 use pixeldelta_io::{decode, encode_png, Decoded};
 use pixeldelta_report::{Category, Cluster, Entry, Images, Report, Side};
 use rayon::prelude::*;
@@ -43,6 +43,16 @@ pub fn run_dirs(
         diff: Some(DiffStyle::default()),
         ..Default::default()
     };
+    // What decides whether a pair differs at all, before the comparison that
+    // fills an entry runs. It counts nothing and stops at the first differing
+    // pixel, so it neither allocates the per-pixel bitmap nor renders a diff
+    // image for a pair that turns out to match.
+    let probe = CompareOptions {
+        threshold,
+        detect_antialiasing: antialiasing,
+        fail_fast: Some(FailFast { max_diff_pixels: 0 }),
+        ..Default::default()
+    };
 
     // `BTreeSet::union` merges two already-sorted iterators, so this is the
     // lexicographic order of the relative paths. Materializing it into a
@@ -67,6 +77,7 @@ pub fn run_dirs(
                     &expected.join(rel),
                     &actual.join(rel),
                     &opts,
+                    &probe,
                     tolerance_ratio,
                     images_dir,
                 ),
@@ -95,11 +106,16 @@ pub fn run_dirs(
 }
 
 /// Compares one file present in both directories.
+///
+/// `probe` decides whether the pair differs at all and `opts` produces what a
+/// differing entry holds, so the pairs that match are never measured with the
+/// second one.
 fn compare_pair(
     rel: &str,
     expected_path: &Path,
     actual_path: &Path,
     opts: &CompareOptions,
+    probe: &CompareOptions,
     tolerance_ratio: f64,
     images_dir: Option<&Path>,
 ) -> Result<Entry, CliError> {
@@ -133,9 +149,8 @@ fn compare_pair(
 
     let a = image(&expected);
     let b = image(&actual);
-    let result = compare(&a, &b, opts);
 
-    if result.verdict == Verdict::Match {
+    if compare(&a, &b, probe).verdict == Verdict::Match {
         write_image(images_dir, rel, Side::Expected, &expected_bytes)?;
         return Ok(Entry {
             path: rel.to_owned(),
@@ -154,6 +169,7 @@ fn compare_pair(
         });
     }
 
+    let result = compare(&a, &b, opts);
     let diff = result
         .diff_image
         .expect("the diff image was requested for the comparison");
