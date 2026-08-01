@@ -18,7 +18,7 @@ pixeldelta-io = { path = "../pixeldelta-io" }
 pixeldelta-report = { path = "../pixeldelta-report" }
 # Parses subcommands, positional arguments and flags, and generates --help.
 # Writing that by hand is hundreds of lines unrelated to comparison.
-clap = { version = "=4.5.35", features = ["derive"] }
+clap = { version = "4.5", features = ["derive"] }
 # Derives Display and Error for CliError, which main turns into an exit code.
 thiserror = "2.0"
 # Reads and writes the snapshot manifest. Hand-written JSON would need string
