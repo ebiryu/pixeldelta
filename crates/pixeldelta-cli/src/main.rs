@@ -1,14 +1,14 @@
 //! The pixeldelta command-line tool.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use clap::{Args, Parser, Subcommand};
-use pixeldelta_core::{CompareOptions, Verdict};
+use pixeldelta_core::{CompareOptions, Rect, Verdict};
 
 use pixeldelta_cli::{
-    ci, compare_files, exit_code, pull_request_number, run_dirs, write_report, CiOptions,
-    CompareRun, GithubConfig, Notification, Storage,
+    ci, compare_files, exit_code, load_config, parse_ignore_region, pull_request_number, run_dirs,
+    write_report, CiOptions, CompareRun, GithubConfig, Notification, RunOptions, Storage,
 };
 
 #[derive(Parser)]
@@ -37,12 +37,15 @@ struct CompareArgs {
     /// Write the diff image to this path as PNG.
     #[arg(short, long)]
     output: Option<PathBuf>,
-    /// Color delta a pixel must exceed to count, as a fraction in [0, 1].
-    #[arg(long, default_value_t = 0.1)]
-    threshold: f32,
+    /// Color delta a pixel must exceed to count, as a fraction in [0, 1]. Default 0.1.
+    #[arg(long)]
+    threshold: Option<f32>,
     /// Count anti-aliasing differences instead of excluding them.
     #[arg(long)]
     no_antialiasing: bool,
+    /// Region excluded from the comparison. Repeatable.
+    #[arg(long, value_name = "X,Y,W,H", value_parser = parse_ignore_region)]
+    ignore_region: Vec<Rect>,
 }
 
 #[derive(Args)]
@@ -60,15 +63,22 @@ struct RunArgs {
     /// Write the JUnit XML report to this path.
     #[arg(long)]
     junit: Option<PathBuf>,
-    /// Color delta a pixel must exceed to count, as a fraction in [0, 1].
-    #[arg(long, default_value_t = 0.1)]
-    threshold: f32,
+    /// Color delta a pixel must exceed to count, as a fraction in [0, 1]. Default 0.1.
+    #[arg(long)]
+    threshold: Option<f32>,
     /// Count anti-aliasing differences instead of excluding them.
     #[arg(long)]
     no_antialiasing: bool,
-    /// Fraction of an image's pixels that may differ and still pass, in [0, 1].
-    #[arg(long, default_value_t = 0.0)]
-    tolerance_ratio: f64,
+    /// Fraction of an image's pixels that may differ and still pass, in [0, 1]. Default 0.
+    #[arg(long)]
+    tolerance_ratio: Option<f64>,
+    /// Region excluded from the comparison. Repeatable, applies to every image.
+    #[arg(long, value_name = "X,Y,W,H", value_parser = parse_ignore_region)]
+    ignore_region: Vec<Rect>,
+    /// Config file read for per-path overrides. Defaults to pixeldelta.config.json
+    /// in the working directory, when present.
+    #[arg(long)]
+    config: Option<PathBuf>,
     /// Clusters an entry reports, the ones with the most differing pixels. 0 reports every cluster.
     #[arg(long, default_value_t = pixeldelta_cli::DEFAULT_MAX_CLUSTERS)]
     max_clusters: usize,
@@ -114,15 +124,22 @@ struct CiArgs {
     /// Pull request to comment on. Read from the workflow event when omitted.
     #[arg(long)]
     pr: Option<u64>,
-    /// Color delta a pixel must exceed to count, as a fraction in [0, 1].
-    #[arg(long, default_value_t = 0.1)]
-    threshold: f32,
+    /// Color delta a pixel must exceed to count, as a fraction in [0, 1]. Default 0.1.
+    #[arg(long)]
+    threshold: Option<f32>,
     /// Count anti-aliasing differences instead of excluding them.
     #[arg(long)]
     no_antialiasing: bool,
-    /// Fraction of an image's pixels that may differ and still pass, in [0, 1].
-    #[arg(long, default_value_t = 0.0)]
-    tolerance_ratio: f64,
+    /// Fraction of an image's pixels that may differ and still pass, in [0, 1]. Default 0.
+    #[arg(long)]
+    tolerance_ratio: Option<f64>,
+    /// Region excluded from the comparison. Repeatable, applies to every image.
+    #[arg(long, value_name = "X,Y,W,H", value_parser = parse_ignore_region)]
+    ignore_region: Vec<Rect>,
+    /// Config file read for per-path overrides. Defaults to pixeldelta.config.json
+    /// in the working directory, when present.
+    #[arg(long)]
+    config: Option<PathBuf>,
     /// Clusters an entry reports, the ones with the most differing pixels. 0 reports every cluster.
     #[arg(long, default_value_t = pixeldelta_cli::DEFAULT_MAX_CLUSTERS)]
     max_clusters: usize,
@@ -157,15 +174,28 @@ fn run_ci(args: CiArgs) -> ExitCode {
         None
     };
 
+    let config = match load_config(
+        args.config.as_deref(),
+        Path::new("."),
+        args.threshold,
+        args.tolerance_ratio,
+        args.ignore_region.clone(),
+    ) {
+        Ok(config) => config,
+        Err(error) => {
+            eprintln!("error: {error}");
+            return ExitCode::from(3);
+        }
+    };
+
     let opts = CiOptions {
         repo: &args.repo,
         actual: &args.actual,
         storage: &storage,
         base_branch: &args.base_branch,
         history_limit: args.history_limit,
-        threshold: args.threshold,
+        config: &config,
         antialiasing: !args.no_antialiasing,
-        tolerance_ratio: args.tolerance_ratio,
         max_clusters: args.max_clusters,
         report: args.report.as_deref(),
         report_url: args.report_url.as_deref(),
@@ -243,14 +273,29 @@ fn github_config(args: &CiArgs) -> Result<GithubConfig, String> {
 }
 
 fn run(args: RunArgs) -> ExitCode {
+    let config = match load_config(
+        args.config.as_deref(),
+        Path::new("."),
+        args.threshold,
+        args.tolerance_ratio,
+        args.ignore_region,
+    ) {
+        Ok(config) => config,
+        Err(error) => {
+            eprintln!("error: {error}");
+            return ExitCode::from(3);
+        }
+    };
+
     let report = match run_dirs(
         &args.expected,
         &args.actual,
-        args.threshold,
-        !args.no_antialiasing,
-        args.tolerance_ratio,
-        args.max_clusters,
-        args.report.as_deref(),
+        &RunOptions {
+            config: &config,
+            antialiasing: !args.no_antialiasing,
+            max_clusters: args.max_clusters,
+            images_dir: args.report.as_deref(),
+        },
     ) {
         Ok(report) => report,
         Err(error) => {
@@ -285,8 +330,11 @@ fn run(args: RunArgs) -> ExitCode {
 
 fn run_compare(args: CompareArgs) -> ExitCode {
     let opts = CompareOptions {
-        threshold: args.threshold,
+        threshold: args
+            .threshold
+            .unwrap_or(CompareOptions::default().threshold),
         detect_antialiasing: !args.no_antialiasing,
+        ignore_regions: args.ignore_region,
         ..Default::default()
     };
 

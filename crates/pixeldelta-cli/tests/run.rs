@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use pixeldelta_cli::{run_dirs, write_report, CliError};
+use pixeldelta_cli::{load_config, run_dirs, write_report, CliError, Config, RunOptions};
 use pixeldelta_io::{encode_png, DecodeError, Format};
 use pixeldelta_report::Category;
 
@@ -29,6 +29,34 @@ fn png_with_one_diff(first: [u8; 4], rest: [u8; 4], width: u32) -> Vec<u8> {
 fn write(path: &Path, bytes: &[u8]) {
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(path, bytes).unwrap();
+}
+
+/// Builds a `Config` from flag-equivalent values only, as if no config file
+/// were present: a fresh temporary directory holds no
+/// `pixeldelta.config.json`, so `load_config` falls back to the defaults and
+/// the two values given here.
+fn config_with(threshold: f32, tolerance_ratio: f64) -> Config {
+    let dir = tempfile::tempdir().unwrap();
+    load_config(
+        None,
+        dir.path(),
+        Some(threshold),
+        Some(tolerance_ratio),
+        Vec::new(),
+    )
+    .expect("a directory with no config file loads with just the flag values")
+}
+
+/// `RunOptions` for a run that neither raises nor lowers the defaults this
+/// suite exercises: antialiasing on, every cluster reported unless
+/// overridden.
+fn options<'a>(config: &'a Config, images_dir: Option<&'a Path>) -> RunOptions<'a> {
+    RunOptions {
+        config,
+        antialiasing: true,
+        max_clusters: pixeldelta_cli::DEFAULT_MAX_CLUSTERS,
+        images_dir,
+    }
 }
 
 /// An expected/actual pair of one-row PNGs of the given width, where `actual`
@@ -85,14 +113,11 @@ fn category_of<'a>(entries: &'a [pixeldelta_report::Entry], path: &str) -> &'a C
 #[test]
 fn every_pairing_lands_in_the_right_category() {
     let dir = fixture();
+    let config = config_with(0.1, 0.0);
     let report = run_dirs(
         &dir.path().join("expected"),
         &dir.path().join("actual"),
-        0.1,
-        true,
-        0.0,
-        pixeldelta_cli::DEFAULT_MAX_CLUSTERS,
-        None,
+        &options(&config, None),
     )
     .expect("the run finishes");
 
@@ -117,14 +142,11 @@ fn every_pairing_lands_in_the_right_category() {
 #[test]
 fn a_changed_entry_carries_its_diff_image_and_clusters() {
     let dir = fixture();
+    let config = config_with(0.1, 0.0);
     let report = run_dirs(
         &dir.path().join("expected"),
         &dir.path().join("actual"),
-        0.1,
-        true,
-        0.0,
-        pixeldelta_cli::DEFAULT_MAX_CLUSTERS,
-        None,
+        &options(&config, None),
     )
     .expect("the run finishes");
 
@@ -147,16 +169,8 @@ fn matching_directories_pass() {
     write(&e.join("a.png"), &png([9, 9, 9, 255], 4));
     write(&a.join("a.png"), &png([9, 9, 9, 255], 4));
 
-    let report = run_dirs(
-        &e,
-        &a,
-        0.1,
-        true,
-        0.0,
-        pixeldelta_cli::DEFAULT_MAX_CLUSTERS,
-        None,
-    )
-    .expect("the run finishes");
+    let config = config_with(0.1, 0.0);
+    let report = run_dirs(&e, &a, &options(&config, None)).expect("the run finishes");
     assert!(report.summary().passed);
 }
 
@@ -171,16 +185,9 @@ fn a_small_difference_is_tolerated_when_the_ratio_allows_it() {
         &png_with_one_diff([200, 0, 0, 255], [10, 10, 10, 255], width),
     );
 
-    let tolerated = run_dirs(
-        &e,
-        &a,
-        0.1,
-        true,
-        0.01,
-        pixeldelta_cli::DEFAULT_MAX_CLUSTERS,
-        None,
-    )
-    .expect("the run finishes with the ratio allowed");
+    let tolerant = config_with(0.1, 0.01);
+    let tolerated = run_dirs(&e, &a, &options(&tolerant, None))
+        .expect("the run finishes with the ratio allowed");
     assert_eq!(
         category_of(&tolerated.entries, "a.png"),
         &Category::Tolerated
@@ -189,16 +196,9 @@ fn a_small_difference_is_tolerated_when_the_ratio_allows_it() {
     assert_eq!(tolerated.summary().changed, 0);
     assert!(tolerated.summary().passed);
 
-    let changed = run_dirs(
-        &e,
-        &a,
-        0.1,
-        true,
-        0.0,
-        pixeldelta_cli::DEFAULT_MAX_CLUSTERS,
-        None,
-    )
-    .expect("the run finishes with no tolerance");
+    let strict = config_with(0.1, 0.0);
+    let changed =
+        run_dirs(&e, &a, &options(&strict, None)).expect("the run finishes with no tolerance");
     assert_eq!(category_of(&changed.entries, "a.png"), &Category::Changed);
     assert!(!changed.summary().passed);
 }
@@ -207,14 +207,11 @@ fn a_small_difference_is_tolerated_when_the_ratio_allows_it() {
 fn write_report_emits_the_requested_files() {
     let dir = fixture();
     let out = dir.path().join("out");
+    let config = config_with(0.1, 0.0);
     let report = run_dirs(
         &dir.path().join("expected"),
         &dir.path().join("actual"),
-        0.1,
-        true,
-        0.0,
-        pixeldelta_cli::DEFAULT_MAX_CLUSTERS,
-        Some(&out),
+        &options(&config, Some(&out)),
     )
     .unwrap();
 
@@ -235,14 +232,11 @@ fn write_report_emits_the_requested_files() {
 fn write_report_writes_diff_images_as_files_and_the_html_has_no_data_uri() {
     let dir = fixture();
     let out = dir.path().join("out");
+    let config = config_with(0.1, 0.0);
     let report = run_dirs(
         &dir.path().join("expected"),
         &dir.path().join("actual"),
-        0.1,
-        true,
-        0.0,
-        pixeldelta_cli::DEFAULT_MAX_CLUSTERS,
-        Some(&out),
+        &options(&config, Some(&out)),
     )
     .unwrap();
 
@@ -264,14 +258,11 @@ fn run_dirs_with_no_images_dir_writes_nothing() {
     let out = dir.path().join("out");
     std::fs::create_dir_all(&out).unwrap();
 
+    let config = config_with(0.1, 0.0);
     run_dirs(
         &dir.path().join("expected"),
         &dir.path().join("actual"),
-        0.1,
-        true,
-        0.0,
-        pixeldelta_cli::DEFAULT_MAX_CLUSTERS,
-        None,
+        &options(&config, None),
     )
     .expect("the run finishes");
 
@@ -303,16 +294,8 @@ fn entries_are_in_lexicographic_path_order() {
     write(&e.join("bbb_top.png"), &png([0, 0, 0, 255], 4));
     write(&a.join("bbb_top.png"), &png([0, 0, 0, 255], 8));
 
-    let report = run_dirs(
-        &e,
-        &a,
-        0.1,
-        true,
-        0.0,
-        pixeldelta_cli::DEFAULT_MAX_CLUSTERS,
-        None,
-    )
-    .expect("the run finishes");
+    let config = config_with(0.1, 0.0);
+    let report = run_dirs(&e, &a, &options(&config, None)).expect("the run finishes");
 
     let paths: Vec<&str> = report.entries.iter().map(|e| e.path.as_str()).collect();
     assert_eq!(
@@ -344,16 +327,8 @@ fn the_reported_error_names_the_first_broken_file_in_path_order() {
     write(&e.join("zzz_broken.png"), b"not an image at all");
     write(&a.join("zzz_broken.png"), b"not an image at all");
 
-    let error = run_dirs(
-        &e,
-        &a,
-        0.1,
-        true,
-        0.0,
-        pixeldelta_cli::DEFAULT_MAX_CLUSTERS,
-        None,
-    )
-    .expect_err("a broken PNG fails the run");
+    let config = config_with(0.1, 0.0);
+    let error = run_dirs(&e, &a, &options(&config, None)).expect_err("a broken PNG fails the run");
 
     assert!(
         matches!(
@@ -380,16 +355,8 @@ fn a_broken_file_on_one_side_only_is_named() {
     write(&a.join("kept.png"), &png([9, 9, 9, 255], 4));
     write(&a.join("added_broken.png"), b"not an image at all");
 
-    let error = run_dirs(
-        &e,
-        &a,
-        0.1,
-        true,
-        0.0,
-        pixeldelta_cli::DEFAULT_MAX_CLUSTERS,
-        None,
-    )
-    .expect_err("a broken PNG fails the run");
+    let config = config_with(0.1, 0.0);
+    let error = run_dirs(&e, &a, &options(&config, None)).expect_err("a broken PNG fails the run");
 
     assert!(
         matches!(&error, CliError::Decode { path, .. } if path == &a.join("added_broken.png")),
@@ -405,16 +372,9 @@ fn an_unreadable_input_names_the_path() {
     let (e, a) = (dir.path().join("expected"), dir.path().join("actual"));
     write(&a.join("only.png"), &png([9, 9, 9, 255], 4));
 
-    let error = run_dirs(
-        &e,
-        &a,
-        0.1,
-        true,
-        0.0,
-        pixeldelta_cli::DEFAULT_MAX_CLUSTERS,
-        None,
-    )
-    .expect_err("a missing directory fails the run");
+    let config = config_with(0.1, 0.0);
+    let error =
+        run_dirs(&e, &a, &options(&config, None)).expect_err("a missing directory fails the run");
 
     assert!(
         matches!(
@@ -450,7 +410,18 @@ fn max_clusters_caps_the_reported_clusters_to_the_largest() {
     write(&e.join("row.png"), &expected_bytes);
     write(&a.join("row.png"), &actual_bytes);
 
-    let report = run_dirs(&e, &a, 0.1, true, 0.0, 3, None).expect("the run finishes");
+    let config = config_with(0.1, 0.0);
+    let report = run_dirs(
+        &e,
+        &a,
+        &RunOptions {
+            config: &config,
+            antialiasing: true,
+            max_clusters: 3,
+            images_dir: None,
+        },
+    )
+    .expect("the run finishes");
 
     let entry = report
         .entries
@@ -474,7 +445,18 @@ fn a_max_clusters_of_zero_reports_every_cluster() {
     write(&e.join("row.png"), &expected_bytes);
     write(&a.join("row.png"), &actual_bytes);
 
-    let report = run_dirs(&e, &a, 0.1, true, 0.0, 0, None).expect("the run finishes");
+    let config = config_with(0.1, 0.0);
+    let report = run_dirs(
+        &e,
+        &a,
+        &RunOptions {
+            config: &config,
+            antialiasing: true,
+            max_clusters: 0,
+            images_dir: None,
+        },
+    )
+    .expect("the run finishes");
 
     let entry = report
         .entries
@@ -484,4 +466,76 @@ fn a_max_clusters_of_zero_reports_every_cluster() {
 
     assert_eq!(entry.clusters.len(), 8);
     assert_eq!(entry.omitted_clusters, 0);
+}
+
+/// An ignore region covering the whole differing row turns what would be a
+/// `changed` entry into `matched`, since the excluded pixels are neither
+/// compared nor counted.
+#[test]
+fn a_config_ignore_region_covering_the_diff_turns_changed_into_matched() {
+    let dir = tempfile::tempdir().unwrap();
+    let (e, a) = (dir.path().join("expected"), dir.path().join("actual"));
+    let width = 8;
+    write(&e.join("a.png"), &png([10, 10, 10, 255], width));
+    write(&a.join("a.png"), &png([200, 0, 0, 255], width));
+
+    std::fs::write(
+        dir.path().join("pixeldelta.config.json"),
+        r#"{"ignoreRegions": [{"x": 0, "y": 0, "width": 8, "height": 1}]}"#,
+    )
+    .unwrap();
+
+    let config = load_config(None, dir.path(), None, None, Vec::new())
+        .expect("the config file in the working directory is read");
+    let report = run_dirs(&e, &a, &options(&config, None)).expect("the run finishes");
+
+    assert_eq!(category_of(&report.entries, "a.png"), &Category::Matched);
+}
+
+/// An override's `toleranceRatio` widens the allowance for paths its
+/// pattern matches, and leaves every other path at the run-level default.
+#[test]
+fn an_override_tolerance_ratio_applies_only_to_matching_paths() {
+    let dir = tempfile::tempdir().unwrap();
+    let (e, a) = (dir.path().join("expected"), dir.path().join("actual"));
+    let width = 1000;
+    let diff = png_with_one_diff([200, 0, 0, 255], [10, 10, 10, 255], width);
+    write(&e.join("dashboard/a.png"), &png([10, 10, 10, 255], width));
+    write(&a.join("dashboard/a.png"), &diff);
+    write(&e.join("other/a.png"), &png([10, 10, 10, 255], width));
+    write(&a.join("other/a.png"), &diff);
+
+    std::fs::write(
+        dir.path().join("pixeldelta.config.json"),
+        r#"{"overrides": [{"paths": ["dashboard/**"], "toleranceRatio": 0.01}]}"#,
+    )
+    .unwrap();
+
+    let config = load_config(None, dir.path(), None, None, Vec::new())
+        .expect("the config file in the working directory is read");
+    let report = run_dirs(&e, &a, &options(&config, None)).expect("the run finishes");
+
+    assert_eq!(
+        category_of(&report.entries, "dashboard/a.png"),
+        &Category::Tolerated
+    );
+    assert_eq!(
+        category_of(&report.entries, "other/a.png"),
+        &Category::Changed
+    );
+}
+
+/// A `--config` path that does not exist is an error, rather than silently
+/// running with no config.
+#[test]
+fn a_missing_config_path_is_an_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let missing = dir.path().join("no-such-config.json");
+
+    let error = load_config(Some(&missing), dir.path(), None, None, Vec::new())
+        .expect_err("a --config path that does not exist is an error");
+    assert!(matches!(
+        error,
+        pixeldelta_cli::ConfigError::NotFound { .. }
+    ));
 }

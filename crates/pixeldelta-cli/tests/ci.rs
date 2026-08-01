@@ -5,7 +5,7 @@ mod stub;
 use std::path::Path;
 use std::process::Command;
 
-use pixeldelta_cli::{ci, CiOptions, GithubConfig, Notification, Storage};
+use pixeldelta_cli::{ci, load_config, CiOptions, Config, GithubConfig, Notification, Storage};
 
 #[test]
 fn the_first_run_stores_a_snapshot_and_has_nothing_to_compare() {
@@ -16,8 +16,9 @@ fn the_first_run_stores_a_snapshot_and_has_nothing_to_compare() {
     let actual = dir.path().join("actual");
     write_png(&actual.join("a.png"), 8, 8, [0, 128, 0, 255]);
     let storage = storage(dir.path());
+    let config = default_config();
 
-    let run = ci(&options(&repo, &actual, &storage)).expect("the run finishes");
+    let run = ci(&options(&repo, &actual, &storage, &config)).expect("the run finishes");
 
     assert_eq!(run.head, head);
     assert_eq!(run.baseline, None);
@@ -36,11 +37,12 @@ fn an_unchanged_screenshot_passes_against_the_stored_baseline() {
     let actual = dir.path().join("actual");
     write_png(&actual.join("a.png"), 8, 8, [0, 128, 0, 255]);
     let storage = storage(dir.path());
+    let config = default_config();
 
     commit(&repo, "first");
-    ci(&options(&repo, &actual, &storage)).expect("the first run finishes");
+    ci(&options(&repo, &actual, &storage, &config)).expect("the first run finishes");
     let head = commit(&repo, "second");
-    let run = ci(&options(&repo, &actual, &storage)).expect("the second run finishes");
+    let run = ci(&options(&repo, &actual, &storage, &config)).expect("the second run finishes");
 
     assert_eq!(run.head, head);
     assert!(run.baseline.is_some());
@@ -57,14 +59,15 @@ fn a_changed_screenshot_fails_against_the_stored_baseline() {
     let actual = dir.path().join("actual");
     write_png(&actual.join("a.png"), 8, 8, [0, 128, 0, 255]);
     let storage = storage(dir.path());
+    let config = default_config();
 
     let first = commit(&repo, "first");
-    ci(&options(&repo, &actual, &storage)).expect("the first run finishes");
+    ci(&options(&repo, &actual, &storage, &config)).expect("the first run finishes");
 
     write_png(&actual.join("a.png"), 8, 8, [255, 0, 0, 255]);
     write_png(&actual.join("new.png"), 4, 4, [0, 0, 255, 255]);
     commit(&repo, "second");
-    let run = ci(&options(&repo, &actual, &storage)).expect("the second run finishes");
+    let run = ci(&options(&repo, &actual, &storage, &config)).expect("the second run finishes");
 
     assert_eq!(run.baseline, Some(first));
     let summary = run.summary.expect("the run compared against a baseline");
@@ -81,15 +84,16 @@ fn the_report_is_written_and_stored_when_it_is_asked_for() {
     let actual = dir.path().join("actual");
     write_png(&actual.join("a.png"), 8, 8, [0, 128, 0, 255]);
     let storage = storage(dir.path());
+    let config = default_config();
 
     commit(&repo, "first");
-    ci(&options(&repo, &actual, &storage)).expect("the first run finishes");
+    ci(&options(&repo, &actual, &storage, &config)).expect("the first run finishes");
 
     write_png(&actual.join("a.png"), 8, 8, [255, 0, 0, 255]);
     let head = commit(&repo, "second");
     let report_dir = dir.path().join("report");
     let json = dir.path().join("result.json");
-    let mut opts = options(&repo, &actual, &storage);
+    let mut opts = options(&repo, &actual, &storage, &config);
     opts.report = Some(&report_dir);
     opts.json = Some(&json);
     let run = ci(&opts).expect("the run finishes");
@@ -114,14 +118,15 @@ fn the_stored_report_points_expected_at_the_baseline_snapshot_and_skips_reupload
     let actual = dir.path().join("actual");
     write_png(&actual.join("a.png"), 8, 8, [0, 128, 0, 255]);
     let storage = storage(dir.path());
+    let config = default_config();
 
     let first = commit(&repo, "first");
-    ci(&options(&repo, &actual, &storage)).expect("the first run finishes");
+    ci(&options(&repo, &actual, &storage, &config)).expect("the first run finishes");
 
     write_png(&actual.join("a.png"), 8, 8, [255, 0, 0, 255]);
     let head = commit(&repo, "second");
     let report_dir = dir.path().join("report");
-    let mut opts = options(&repo, &actual, &storage);
+    let mut opts = options(&repo, &actual, &storage, &config);
     opts.report = Some(&report_dir);
     ci(&opts).expect("the run finishes");
 
@@ -155,9 +160,10 @@ fn without_a_report_flag_nothing_is_written() {
     let actual = dir.path().join("actual");
     write_png(&actual.join("a.png"), 8, 8, [0, 128, 0, 255]);
     let storage = storage(dir.path());
+    let config = default_config();
 
     let head = commit(&repo, "first");
-    ci(&options(&repo, &actual, &storage)).expect("the run finishes");
+    ci(&options(&repo, &actual, &storage, &config)).expect("the run finishes");
 
     assert!(!storage_root(dir.path()).join(&head).join("report").exists());
 }
@@ -172,15 +178,16 @@ fn the_notification_body_is_appended_to_the_markdown_file() {
     let actual = dir.path().join("actual");
     write_png(&actual.join("a.png"), 8, 8, [0, 128, 0, 255]);
     let storage = storage(dir.path());
+    let config = default_config();
 
     let first = commit(&repo, "first");
-    ci(&options(&repo, &actual, &storage)).expect("the first run finishes");
+    ci(&options(&repo, &actual, &storage, &config)).expect("the first run finishes");
 
     write_png(&actual.join("a.png"), 8, 8, [255, 0, 0, 255]);
     commit(&repo, "second");
     let markdown = dir.path().join("summary.md");
     std::fs::write(&markdown, "written by an earlier step\n").expect("the file is written");
-    let mut opts = options(&repo, &actual, &storage);
+    let mut opts = options(&repo, &actual, &storage, &config);
     opts.markdown = Some(&markdown);
     ci(&opts).expect("the run finishes");
 
@@ -201,16 +208,17 @@ fn the_notification_body_links_to_the_report() {
     let actual = dir.path().join("actual");
     write_png(&actual.join("a.png"), 8, 8, [0, 128, 0, 255]);
     let storage = storage(dir.path());
+    let config = default_config();
 
     commit(&repo, "first");
-    ci(&options(&repo, &actual, &storage)).expect("the first run finishes");
+    ci(&options(&repo, &actual, &storage, &config)).expect("the first run finishes");
 
     write_png(&actual.join("a.png"), 8, 8, [255, 0, 0, 255]);
     commit(&repo, "second");
     let report_dir = dir.path().join("report");
     let markdown = dir.path().join("summary.md");
     let url = "https://reports.example.invalid/head/index.html";
-    let mut opts = options(&repo, &actual, &storage);
+    let mut opts = options(&repo, &actual, &storage, &config);
     opts.report = Some(&report_dir);
     opts.report_url = Some(url);
     opts.markdown = Some(&markdown);
@@ -231,9 +239,10 @@ fn the_comment_carries_the_notification_body() {
     let actual = dir.path().join("actual");
     write_png(&actual.join("a.png"), 8, 8, [0, 128, 0, 255]);
     let storage = storage(dir.path());
+    let config = default_config();
 
     commit(&repo, "first");
-    ci(&options(&repo, &actual, &storage)).expect("the first run finishes");
+    ci(&options(&repo, &actual, &storage, &config)).expect("the first run finishes");
 
     write_png(&actual.join("a.png"), 8, 8, [255, 0, 0, 255]);
     commit(&repo, "second");
@@ -247,7 +256,7 @@ fn the_comment_carries_the_notification_body() {
         pull_request: 3,
         token: "ghs_token".into(),
     };
-    let mut opts = options(&repo, &actual, &storage);
+    let mut opts = options(&repo, &actual, &storage, &config);
     opts.github = Some(&github);
     let run = ci(&opts).expect("the run finishes");
 
@@ -264,16 +273,28 @@ fn the_comment_carries_the_notification_body() {
     assert!(body.contains("changed"), "{body}");
 }
 
-fn options<'a>(repo: &'a Path, actual: &'a Path, storage: &'a Storage) -> CiOptions<'a> {
+/// A `Config` equivalent to the flags' defaults, as if no config file were
+/// given: a fresh directory holds no `pixeldelta.config.json`.
+fn default_config() -> Config {
+    let dir = tempfile::tempdir().expect("a temporary directory");
+    load_config(None, dir.path(), Some(0.1), Some(0.0), Vec::new())
+        .expect("a directory with no config file loads with just the flag values")
+}
+
+fn options<'a>(
+    repo: &'a Path,
+    actual: &'a Path,
+    storage: &'a Storage,
+    config: &'a Config,
+) -> CiOptions<'a> {
     CiOptions {
         repo,
         actual,
         storage,
         base_branch: "main",
         history_limit: 50,
-        threshold: 0.1,
+        config,
         antialiasing: true,
-        tolerance_ratio: 0.0,
         max_clusters: pixeldelta_cli::DEFAULT_MAX_CLUSTERS,
         report: None,
         report_url: None,

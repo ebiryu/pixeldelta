@@ -8,54 +8,44 @@ use pixeldelta_io::{decode, encode_png, Decoded};
 use pixeldelta_report::{Category, Cluster, Entry, Images, Report, Side};
 use rayon::prelude::*;
 
+use crate::config::{Config, Settings};
 use crate::CliError;
+
+/// What one `run_dirs` call works on, beyond the two directories being
+/// compared.
+pub struct RunOptions<'a> {
+    /// Resolves the threshold, tolerance ratio and ignore regions for each
+    /// entry path.
+    pub config: &'a Config,
+    /// Whether anti-aliasing differences are excluded.
+    pub antialiasing: bool,
+    /// Clusters an entry reports, the ones with the most differing pixels. 0
+    /// reports every cluster.
+    pub max_clusters: usize,
+    /// Where each entry's images are written as soon as that entry is
+    /// compared. `None` produces and drops them without writing.
+    pub images_dir: Option<&'a Path>,
+}
 
 /// Compares two directories of PNGs, pairing files by their relative path.
 ///
 /// Clustering, the layout-shift search and the diff image are always on: the
 /// report shows where each difference sits, whether it moved, and the diff
-/// image. `threshold` and `antialiasing` come from the caller. `tolerance_ratio`
-/// is the fraction of an image's pixels that may differ and still count as
-/// `tolerated` rather than `changed`. `max_clusters` is the number of clusters
-/// an entry reports, the largest by differing pixels, and 0 reports every
-/// cluster.
+/// image. `options.config` resolves the threshold, tolerance ratio and ignore
+/// regions for each entry path, since an override in the config file can set
+/// them differently per path (see `Config::settings`). The report's own
+/// `threshold` and `tolerance_ratio` fields carry the run-level base values,
+/// `options.config.base()`, not any one entry's resolved values.
 ///
-/// When `images_dir` is `Some`, each entry's images are written under it at
-/// `pixeldelta_report::asset_path(&entry.path, side)` as soon as that entry is
-/// compared, so at most one entry's worth of encoded PNGs per worker thread is
-/// held at a time rather than the whole run's. When it is `None`, the bytes
-/// are produced and dropped without being written. Either way, `Entry::images`
-/// records which sides the entry has.
-pub fn run_dirs(
-    expected: &Path,
-    actual: &Path,
-    threshold: f32,
-    antialiasing: bool,
-    tolerance_ratio: f64,
-    max_clusters: usize,
-    images_dir: Option<&Path>,
-) -> Result<Report, CliError> {
+/// When `options.images_dir` is `Some`, each entry's images are written under
+/// it at `pixeldelta_report::asset_path(&entry.path, side)` as soon as that
+/// entry is compared, so at most one entry's worth of encoded PNGs per worker
+/// thread is held at a time rather than the whole run's. When it is `None`,
+/// the bytes are produced and dropped without being written. Either way,
+/// `Entry::images` records which sides the entry has.
+pub fn run_dirs(expected: &Path, actual: &Path, options: &RunOptions) -> Result<Report, CliError> {
     let expected_files = collect_pngs(expected)?;
     let actual_files = collect_pngs(actual)?;
-
-    let opts = CompareOptions {
-        threshold,
-        detect_antialiasing: antialiasing,
-        cluster: true,
-        layout_shift: true,
-        diff: Some(DiffStyle::default()),
-        ..Default::default()
-    };
-    // What decides whether a pair differs at all, before the comparison that
-    // fills an entry runs. It counts nothing and stops at the first differing
-    // pixel, so it neither allocates the per-pixel bitmap nor renders a diff
-    // image for a pair that turns out to match.
-    let probe = CompareOptions {
-        threshold,
-        detect_antialiasing: antialiasing,
-        fail_fast: Some(FailFast { max_diff_pixels: 0 }),
-        ..Default::default()
-    };
 
     // `BTreeSet::union` merges two already-sorted iterators, so this is the
     // lexicographic order of the relative paths. Materializing it into a
@@ -75,18 +65,30 @@ pub fn run_dirs(
             let in_expected = expected_files.contains(rel);
             let in_actual = actual_files.contains(rel);
             match (in_expected, in_actual) {
-                (true, true) => compare_pair(
+                (true, true) => {
+                    let settings = options.config.settings(rel);
+                    let opts = full_options(&settings, options.antialiasing);
+                    let probe = probe_options(&settings, options.antialiasing);
+                    compare_pair(
+                        rel,
+                        &expected.join(rel),
+                        &actual.join(rel),
+                        &opts,
+                        &probe,
+                        settings.tolerance_ratio,
+                        options.max_clusters,
+                        options.images_dir,
+                    )
+                }
+                (false, true) => {
+                    only_one(rel, &actual.join(rel), Category::Added, options.images_dir)
+                }
+                (true, false) => only_one(
                     rel,
                     &expected.join(rel),
-                    &actual.join(rel),
-                    &opts,
-                    &probe,
-                    tolerance_ratio,
-                    max_clusters,
-                    images_dir,
+                    Category::Removed,
+                    options.images_dir,
                 ),
-                (false, true) => only_one(rel, &actual.join(rel), Category::Added, images_dir),
-                (true, false) => only_one(rel, &expected.join(rel), Category::Removed, images_dir),
                 (false, false) => unreachable!("a path came from one of the two sets"),
             }
         })
@@ -100,13 +102,42 @@ pub fn run_dirs(
         entries.push(result?);
     }
 
+    let base = options.config.base();
     Ok(Report {
-        threshold,
-        antialiasing,
+        threshold: base.threshold,
+        antialiasing: options.antialiasing,
         layout_shift: true,
-        tolerance_ratio,
+        tolerance_ratio: base.tolerance_ratio,
         entries,
     })
+}
+
+/// Builds the options a differing pair is compared with: clustering, the
+/// layout-shift search and the diff image are always requested.
+fn full_options(settings: &Settings, antialiasing: bool) -> CompareOptions {
+    CompareOptions {
+        threshold: settings.threshold,
+        detect_antialiasing: antialiasing,
+        ignore_regions: settings.ignore_regions.clone(),
+        cluster: true,
+        layout_shift: true,
+        diff: Some(DiffStyle::default()),
+        ..Default::default()
+    }
+}
+
+/// Builds the options that decide whether a pair differs at all, before the
+/// comparison that fills an entry runs. It counts nothing and stops at the
+/// first differing pixel, so it neither allocates the per-pixel bitmap nor
+/// renders a diff image for a pair that turns out to match.
+fn probe_options(settings: &Settings, antialiasing: bool) -> CompareOptions {
+    CompareOptions {
+        threshold: settings.threshold,
+        detect_antialiasing: antialiasing,
+        ignore_regions: settings.ignore_regions.clone(),
+        fail_fast: Some(FailFast { max_diff_pixels: 0 }),
+        ..Default::default()
+    }
 }
 
 /// Compares one file present in both directories.

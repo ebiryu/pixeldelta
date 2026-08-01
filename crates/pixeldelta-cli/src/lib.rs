@@ -5,6 +5,7 @@
 
 mod baseline;
 mod ci;
+mod config;
 mod github;
 mod http;
 mod paths;
@@ -15,19 +16,100 @@ mod storage;
 
 use std::path::Path;
 
-use pixeldelta_core::{compare, CompareOptions, CompareResult, Image, Verdict};
+use pixeldelta_core::{compare, CompareOptions, CompareResult, Image, Rect, Verdict};
 use pixeldelta_io::{decode_file, encode_png, DecodeError, EncodeError};
 
 pub use baseline::{resolve_baseline, Baseline, BaselineError};
 pub use ci::{ci, CiOptions, CiRun};
+pub use config::{load_config, Config, ConfigError, Settings};
 pub use github::{notify, pull_request_number, GithubConfig, GithubError, Notification};
-pub use run::{run_dirs, write_report};
+pub use run::{run_dirs, write_report, RunOptions};
 pub use sigv4::Credentials;
 pub use storage::{S3Config, Storage, StorageError};
 
 /// How many clusters one entry reports by default, the ones with the most
 /// differing pixels.
 pub const DEFAULT_MAX_CLUSTERS: usize = 100;
+
+/// A `--ignore-region` value that is not four comma-separated `u32` fields.
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+#[error("{value} is not a valid ignore region: expected X,Y,W,H")]
+pub struct RectParseError {
+    value: String,
+}
+
+/// Parses a `--ignore-region X,Y,W,H` value into a [`Rect`].
+///
+/// The four fields are `u32`, separated by commas with no other characters.
+/// A width or height of `0` is accepted: `Rect` already treats it as covering
+/// no pixels.
+pub fn parse_ignore_region(value: &str) -> Result<Rect, RectParseError> {
+    let invalid = || RectParseError {
+        value: value.to_owned(),
+    };
+    let fields: Vec<&str> = value.split(',').collect();
+    let [x, y, width, height] = fields.as_slice() else {
+        return Err(invalid());
+    };
+    let parse = |s: &str| s.parse::<u32>().map_err(|_| invalid());
+    Ok(Rect {
+        x: parse(x)?,
+        y: parse(y)?,
+        width: parse(width)?,
+        height: parse(height)?,
+    })
+}
+
+#[cfg(test)]
+mod ignore_region_tests {
+    use super::*;
+
+    #[test]
+    fn a_valid_value_parses_into_its_four_fields() {
+        assert_eq!(
+            parse_ignore_region("10,20,30,40"),
+            Ok(Rect {
+                x: 10,
+                y: 20,
+                width: 30,
+                height: 40,
+            })
+        );
+    }
+
+    #[test]
+    fn a_zero_width_or_height_is_accepted() {
+        assert_eq!(
+            parse_ignore_region("0,0,0,5"),
+            Ok(Rect {
+                x: 0,
+                y: 0,
+                width: 0,
+                height: 5,
+            })
+        );
+    }
+
+    #[test]
+    fn too_few_fields_is_rejected() {
+        assert!(parse_ignore_region("1,2,3").is_err());
+    }
+
+    #[test]
+    fn too_many_fields_is_rejected() {
+        assert!(parse_ignore_region("1,2,3,4,5").is_err());
+    }
+
+    #[test]
+    fn a_non_numeric_field_is_rejected() {
+        assert!(parse_ignore_region("1,2,3,x").is_err());
+    }
+
+    #[test]
+    fn empty_input_is_rejected() {
+        assert!(parse_ignore_region("").is_err());
+    }
+}
 
 /// Summary of a `compare` run.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -74,6 +156,9 @@ pub enum CliError {
     /// The comment could not be posted.
     #[error(transparent)]
     Github(#[from] GithubError),
+    /// The config file could not be read or parsed.
+    #[error(transparent)]
+    Config(#[from] ConfigError),
 }
 
 impl CliError {

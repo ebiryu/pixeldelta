@@ -5,8 +5,9 @@ use std::path::{Path, PathBuf};
 use pixeldelta_report::{Entry, Side, Summary};
 
 use crate::baseline::resolve_baseline;
+use crate::config::Config;
 use crate::github::{notify, GithubConfig, Notification};
-use crate::run::{run_dirs, write_html, write_report};
+use crate::run::{run_dirs, write_html, write_report, RunOptions};
 use crate::storage::Storage;
 use crate::CliError;
 
@@ -22,13 +23,11 @@ pub struct CiOptions<'a> {
     pub base_branch: &'a str,
     /// How many commits the baseline search walks.
     pub history_limit: usize,
-    /// Color delta a pixel must exceed to count.
-    pub threshold: f32,
+    /// Resolves the threshold, tolerance ratio and ignore regions for each
+    /// entry path.
+    pub config: &'a Config,
     /// Whether anti-aliasing differences are excluded.
     pub antialiasing: bool,
-    /// Fraction of an image's pixels that may differ and still count as
-    /// tolerated rather than changed.
-    pub tolerance_ratio: f64,
     /// Clusters an entry reports, the ones with the most differing pixels. 0
     /// reports every cluster.
     pub max_clusters: usize,
@@ -96,11 +95,12 @@ pub fn ci(opts: &CiOptions) -> Result<CiRun, CliError> {
     let report = run_dirs(
         expected.path(),
         opts.actual,
-        opts.threshold,
-        opts.antialiasing,
-        opts.tolerance_ratio,
-        opts.max_clusters,
-        opts.report,
+        &RunOptions {
+            config: opts.config,
+            antialiasing: opts.antialiasing,
+            max_clusters: opts.max_clusters,
+            images_dir: opts.report,
+        },
     )?;
     write_report(&report, None, opts.json, opts.junit)?;
 
