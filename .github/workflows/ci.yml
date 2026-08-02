@@ -138,6 +138,27 @@ jobs:
           path: fuzz/artifacts
           if-no-files-found: ignore
 
+  # Runs each benchmark once and does not look at the time: CI runners vary
+  # run to run, so a time threshold has no basis here. What it catches is a
+  # missing fixture or a benchmark that stopped running. `cargo clippy
+  # --all-targets` already compiles the benchmarks, so this covers only the
+  # runtime failure.
+  #
+  # `publish` leaves this out of `needs`: the benchmark is a development tool,
+  # and nothing that ships depends on it.
+  bench:
+    name: Run the benchmarks once
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: stable 1 weeks ago
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          key: bench
+      - run: cargo bench --bench compare -p pixeldelta-core -- --test
+
   build:
     name: Build ${{ matrix.settings.target }}
     runs-on: ${{ matrix.settings.host }}
