@@ -79,6 +79,28 @@ jobs:
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       - run: cargo +1.88 check --workspace --all-targets
 
+  # The licenses and security advisories of the dependency graph. `just deny`
+  # is the same check on a workstation, run after a dependency is added; here
+  # it also covers what arrives without anyone adding a dependency, such as an
+  # advisory filed against a crate the lock file already holds.
+  #
+  # `publish` leaves this out of `needs`: the advisory database is fetched when
+  # the job runs, so an advisory filed after a commit turns the job red with
+  # nothing in the commit having changed, and a release should not wait on that.
+  deny:
+    name: Licenses and advisories
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: stable 1 weeks ago
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          key: deny
+      - run: cargo install --locked cargo-deny
+      - run: cargo deny check
+
   # A bounded run of the decoder fuzz target, starting from fuzz/seeds/decode.
   # `decode` is where bytes from outside the process enter pixeldelta, and a
   # panic there aborts the Node process instead of raising an exception.
@@ -299,10 +321,37 @@ jobs:
         run: node scripts/place-wasm.mjs
         working-directory: packages/pixeldelta
 
+  # Packs the root package and the host's platform package and installs them
+  # into an empty project. This is the only check on the `files` list in
+  # packages/pixeldelta/package.json and on the bin link an install creates, so
+  # `publish` waits on it. tools/smoke/README.md describes the two stages and
+  # what they leave to the check against the registry after a release.
+  #
+  # tools/smoke/run.sh builds the host addon and executable itself, so this job
+  # does not wait on `build`, and it covers the host platform alone.
+  smoke:
+    name: Smoke test the package layout
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: stable 1 weeks ago
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          key: smoke
+      - run: pnpm install --frozen-lockfile
+      - run: bash tools/smoke/run.sh
+
   publish:
     name: Publish
     runs-on: ubuntu-latest
-    needs: [check, version, msrv, build, test, test-wasi]
+    needs: [check, version, msrv, build, test, test-wasi, smoke]
     if: ${{ github.ref_type == 'tag' || inputs.bootstrap }}
     permissions:
       contents: read
