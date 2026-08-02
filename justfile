@@ -100,6 +100,14 @@ msrv:
 bench:
     cargo bench
 
+# Record a benchmark entry: run criterion and tools/bench, then insert one
+# entry at the top of BENCHMARKS.md. Takes minutes, since it runs criterion
+# over three sizes and the pixelmatch/odiff comparison on top of it. Entries
+# are comparable only against another entry taken on the same machine.
+bench-record:
+    cd tools/bench && pnpm install
+    node tools/bench/record.mjs
+
 # Regenerate the compatibility fixtures and the pixelmatch counts they are
 # checked against. A changed count in expected.txt moves the baseline, so read
 # the diff before committing it.

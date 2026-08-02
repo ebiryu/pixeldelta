@@ -32,3 +32,13 @@ because the counts are this close.
 
 The numbers depend on the machine, the core count and the build, so read them
 as ratios measured together rather than as absolute figures.
+
+## Recording a run
+
+`node bench.mjs` prints and keeps nothing. To keep a run, `just bench-record`
+from the repo root runs the criterion benchmarks and this comparison together
+and writes one entry at the top of `BENCHMARKS.md`, carrying the machine, the
+toolchain and the measurement conditions alongside the numbers.
+
+Both entry points measure through `measure.mjs`; `bench.mjs` formats the rows
+as tables and `record.mjs` folds them into an entry.
