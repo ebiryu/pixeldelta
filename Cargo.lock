@@ -777,7 +777,7 @@ checksum = "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd"
 
 [[package]]
 name = "pixeldelta-cli"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "clap",
  "hmac",
@@ -795,7 +795,7 @@ dependencies = [
 
 [[package]]
 name = "pixeldelta-core"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "criterion",
  "png",
@@ -805,7 +805,7 @@ dependencies = [
 
 [[package]]
 name = "pixeldelta-io"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "png",
  "thiserror",
@@ -813,7 +813,7 @@ dependencies = [
 
 [[package]]
 name = "pixeldelta-node"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "napi",
  "napi-build",
@@ -824,7 +824,7 @@ dependencies = [
 
 [[package]]
 name = "pixeldelta-report"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "insta",
  "serde",
