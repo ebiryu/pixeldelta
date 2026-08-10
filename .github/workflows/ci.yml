@@ -79,28 +79,6 @@ jobs:
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       - run: cargo +1.88 check --workspace --all-targets
 
-  # The licenses and security advisories of the dependency graph. `just deny`
-  # is the same check on a workstation, run after a dependency is added; here
-  # it also covers what arrives without anyone adding a dependency, such as an
-  # advisory filed against a crate the lock file already holds.
-  #
-  # `publish` leaves this out of `needs`: the advisory database is fetched when
-  # the job runs, so an advisory filed after a commit turns the job red with
-  # nothing in the commit having changed, and a release should not wait on that.
-  deny:
-    name: Licenses and advisories
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
-        with:
-          toolchain: stable 1 weeks ago
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          key: deny
-      - run: cargo install --locked cargo-deny
-      - run: cargo deny check
-
   # A bounded run of the decoder fuzz target, starting from fuzz/seeds/decode.
   # `decode` is where bytes from outside the process enter pixeldelta, and a
   # panic there aborts the Node process instead of raising an exception.

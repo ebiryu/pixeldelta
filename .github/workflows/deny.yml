@@ -1,0 +1,43 @@
+# The licenses and security advisories of the Rust dependency graph. `just deny`
+# is the same check on a workstation, run after a dependency is added.
+#
+# It runs on a schedule as well as on changes, because an advisory is filed
+# against a version already in Cargo.lock, with nothing in the repository
+# changing. Waiting for the next push would leave a quiet week unchecked; the
+# weekly run bounds the delay at seven days.
+#
+# This is a workflow of its own so the cron reaches only this job. A release
+# does not wait on it either: the advisory database is fetched when the job
+# runs, so a filing after the commit turns it red with nothing in the commit
+# having changed, and publishing should not stop on that.
+name: Licenses and advisories
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+  pull_request:
+  schedule:
+    # Mondays at 03:00 UTC, a few hours after renovate's weekly pass.
+    - cron: "0 3 * * 1"
+  workflow_dispatch:
+
+jobs:
+  deny:
+    name: Licenses and advisories
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: stable 1 weeks ago
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          key: deny
+      - run: cargo install --locked cargo-deny
+      - run: cargo deny check
