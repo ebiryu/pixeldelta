@@ -1,0 +1,82 @@
+// Opens the updates that the pins would otherwise hold back: Cargo.lock and
+// pnpm-lock.yaml hold what is built, `packageManager` and .node-version hold
+// the toolchains every job runs on, and each workflow step names its action by
+// commit SHA.
+//
+// This runs as the Mend-hosted Renovate app, so this file is the whole setup.
+//
+// What it opens, the maintainer merges once CI is green. The two it cannot
+// decide are read by hand: an update that raises the minimum supported Rust
+// version above 1.88, and a major version bump.
+{
+  $schema: "https://docs.renovatebot.com/renovate-schema.json",
+  extends: ["config:recommended", "helpers:pinGitHubActionDigests"],
+
+  timezone: "Asia/Tokyo",
+  // One pass a week. Security updates are exempt; see vulnerabilityAlerts.
+  schedule: ["before 5am on monday"],
+
+  // Everything the repository pins, listed so that a file added later cannot
+  // bring a manager along with it unnoticed.
+  enabledManagers: ["cargo", "npm", "github-actions", "nodenv"],
+
+  semanticCommits: "enabled",
+  semanticCommitType: "chore",
+  semanticCommitScope: "deps",
+
+  packageRules: [
+    // One pull request per manager per week. Majors are left out of the
+    // groups: they are the updates read by hand, and one of them sitting
+    // unmerged would hold the rest of that week's updates with it.
+    {
+      matchManagers: ["cargo"],
+      matchUpdateTypes: ["minor", "patch", "pin", "digest"],
+      groupName: "cargo dependencies",
+    },
+    {
+      matchManagers: ["npm"],
+      matchUpdateTypes: ["minor", "patch", "pin", "digest"],
+      groupName: "npm dependencies",
+    },
+    {
+      matchManagers: ["github-actions"],
+      matchUpdateTypes: ["minor", "patch", "pin", "digest"],
+      groupName: "github actions",
+    },
+
+    // pnpm is what runs the workspace rather than something in it, so it moves
+    // on its own instead of inside the npm group.
+    {
+      matchDepTypes: ["packageManager"],
+      groupName: "pnpm",
+    },
+
+    // A major in .node-version is the jump to the next Node line, which every
+    // job takes through node-version-file. It waits for approval on the
+    // dashboard instead of arriving on a Monday.
+    {
+      matchManagers: ["nodenv"],
+      matchUpdateTypes: ["major"],
+      dependencyDashboardApproval: true,
+    },
+
+    // tools/ and fuzz/ pin apart from the workspace on purpose: a version
+    // moving under tools/ would move the baseline that recorded benchmarks are
+    // compared against, and fuzz/ builds only on nightly and ships nothing.
+    // Their updates stay visible on the dashboard, and open a pull request
+    // only once approved there.
+    {
+      matchFileNames: ["tools/**", "fuzz/**"],
+      groupName: null,
+      dependencyDashboardApproval: true,
+    },
+  ],
+
+  // An advisory against something already in a lock file is not held for the
+  // next Monday.
+  vulnerabilityAlerts: {
+    schedule: ["at any time"],
+    dependencyDashboardApproval: false,
+    labels: ["security"],
+  },
+}
