@@ -13,18 +13,27 @@ const { existsSync } = require('node:fs')
 const { constants } = require('node:os')
 const { dirname, join } = require('node:path')
 
-// The targets the build matrix produces an executable for. The WebAssembly
-// package is absent on purpose: the executable runs git and opens TLS
-// connections, and wasm32-wasip1 has no sockets, so a build there would carry
-// subcommands that cannot work.
-const supported = [
-  'pixeldelta-darwin-arm64',
-  'pixeldelta-darwin-x64',
-  'pixeldelta-linux-arm64-gnu',
-  'pixeldelta-linux-x64-gnu',
-  'pixeldelta-linux-x64-musl',
-  'pixeldelta-win32-x64-msvc',
-]
+// The targets the build matrix produces an executable for, each paired with
+// the lookup that finds it once installed. The WebAssembly package is absent
+// on purpose: the executable runs git and opens TLS connections, and
+// wasm32-wasip1 has no sockets, so a build there would carry subcommands that
+// cannot work.
+//
+// Each lookup names its package outright rather than assembling the name from
+// the host. A module reference built at runtime is one a bundler cannot follow
+// and a reader cannot check against the packages under npm/, and it is the
+// shape a supply-chain scanner has to treat as a package loading something it
+// declined to name.
+const manifests = {
+  'pixeldelta-darwin-arm64': () => require.resolve('pixeldelta-darwin-arm64/package.json'),
+  'pixeldelta-darwin-x64': () => require.resolve('pixeldelta-darwin-x64/package.json'),
+  'pixeldelta-linux-arm64-gnu': () => require.resolve('pixeldelta-linux-arm64-gnu/package.json'),
+  'pixeldelta-linux-x64-gnu': () => require.resolve('pixeldelta-linux-x64-gnu/package.json'),
+  'pixeldelta-linux-x64-musl': () => require.resolve('pixeldelta-linux-x64-musl/package.json'),
+  'pixeldelta-win32-x64-msvc': () => require.resolve('pixeldelta-win32-x64-msvc/package.json'),
+}
+
+const supported = Object.keys(manifests)
 
 const binaryName = (platform) => (platform === 'win32' ? 'pixeldelta.exe' : 'pixeldelta')
 
@@ -61,7 +70,7 @@ const hostBinary = () => {
   const file = binaryName(process.platform)
   const candidates = []
   try {
-    candidates.push(join(dirname(require.resolve(`${name}/package.json`)), file))
+    candidates.push(join(dirname(manifests[name]()), file))
   } catch {
     // The platform package is optional, so a host outside the matrix and a
     // partial install both land here.

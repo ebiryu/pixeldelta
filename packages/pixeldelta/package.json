@@ -16,7 +16,7 @@
   },
   "files": [
     "main.js",
-    "index.js",
+    "load.js",
     "index.d.ts",
     "browser-entry.js",
     "cli.js"

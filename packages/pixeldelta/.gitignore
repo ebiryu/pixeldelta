@@ -2,12 +2,17 @@
 node_modules/
 
 # Compiled binaries. These are per-platform and are built in CI for each
-# target, so they are never committed. The JS glue beside them (index.js,
-# index.d.ts and the wasi loaders) is generated from the crate's API, is the
-# same on every host, and is committed so a fresh checkout can load and publish
-# without building first.
+# target, so they are never committed. The JS glue beside them (index.d.ts and
+# the wasi loaders) is generated from the crate's API, is the same on every
+# host, and is committed so a fresh checkout can load and publish without
+# building first.
 *.node
 *.wasm
+
+# The loader napi-rs generates. load.js is published in its place, for the
+# reasons that file gives, so this one is only what `napi build` happens to
+# leave behind: nothing reads it and nothing ships it.
+index.js
 
 # Binaries gathered from the build jobs during a release.
 artifacts/
