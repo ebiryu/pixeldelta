@@ -1,4 +1,4 @@
-// Checks main.js, the entry `main` names: index.js when a prebuild matched,
+// Checks main.js, the entry `main` names: load.js when a prebuild matched,
 // and the pixeldelta-wasm package when none did.
 //
 // The fallback runs against stubs in a temporary directory. A checkout able to
@@ -18,13 +18,13 @@ const here = dirname(fileURLToPath(import.meta.url));
 const pkgDir = join(here, '..');
 
 /**
- * A directory holding main.js, an index.js that throws the way the generated
- * loader does on a host with no prebuild, and pixeldelta-wasm beside it or not.
+ * A directory holding main.js, a load.js that throws the way the lookup does
+ * on a host with no prebuild, and pixeldelta-wasm beside it or not.
  */
 const withoutPrebuild = ({ fallbackInstalled, fallbackBody }) => {
   const dir = mkdtempSync(join(tmpdir(), 'pixeldelta-main-'));
   copyFileSync(join(pkgDir, 'main.js'), join(dir, 'main.js'));
-  writeFileSync(join(dir, 'index.js'), "throw new Error('Failed to load native binding')\n");
+  writeFileSync(join(dir, 'load.js'), "throw new Error('No pixeldelta addon')\n");
   if (fallbackInstalled) {
     const installed = join(dir, 'node_modules', 'pixeldelta-wasm');
     mkdirSync(installed, { recursive: true });
@@ -50,9 +50,9 @@ test('a host with neither is told which package to install', (t) => {
     () => require(join(dir, 'main.js')),
     (error) => {
       assert.match(error.message, /pixeldelta-wasm/);
-      // The generated loader names the platforms that do ship a prebuild, so
-      // its report has to survive rather than be replaced by this one.
-      assert.match(error.cause.message, /Failed to load native binding/);
+      // The lookup names the platforms that do ship a prebuild, so its report
+      // has to survive rather than be replaced by this one.
+      assert.match(error.cause.message, /No pixeldelta addon/);
       return true;
     },
   );
@@ -72,9 +72,9 @@ test('a WebAssembly package that fails to load reports its own failure', (t) => 
 
 test('the entry hands back what the binding exports', () => {
   const entry = require('../main.js');
-  const generated = require('../index.js');
-  assert.equal(entry.compare, generated.compare);
-  assert.equal(entry.compareSync, generated.compareSync);
+  const binding = require('../load.js');
+  assert.equal(entry.compare, binding.compare);
+  assert.equal(entry.compareSync, binding.compareSync);
 });
 
 test('the entry carries named exports into an ESM import', async () => {

@@ -313,8 +313,8 @@ jobs:
   # Runs the library tests against the WebAssembly build, which is what a host
   # outside the matrix loads. It runs on any host, so one runner covers it.
   #
-  # The test script sets NAPI_RS_FORCE_WASI=error, which makes the loader hand
-  # back the WASI binding and throw when none is there. Without that the
+  # The test script sets PIXELDELTA_TEST_WASI, which makes the tests load the
+  # WebAssembly build by name and fail when none is there. Without that the
   # runner's own native prebuild would answer and the job would pass without
   # touching the WebAssembly build.
   test-wasi:

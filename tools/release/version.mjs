@@ -1,6 +1,6 @@
 // Reads and writes the version that the release carries.
 //
-// The version lives in four kinds of file, and every one of them has to hold
+// The version lives in three kinds of file, and every one of them has to hold
 // the same string:
 //
 //   1. `packages/pixeldelta/package.json`, the root npm package. This one is
@@ -14,11 +14,9 @@
 //   3. `Cargo.toml`, which `pixeldelta --version` reports through
 //      CARGO_PKG_VERSION. The crates are not published to crates.io, so the
 //      version has no other reader.
-//   4. `packages/pixeldelta/index.js`, the loader napi-rs generates. It embeds
-//      the version once per platform and compares it against the platform
-//      package it loaded, which throws under NAPI_RS_ENFORCE_VERSION_CHECK.
-//      `napi build` writes the version of the moment into it, so a bump that
-//      skipped this file would ship a loader rejecting its own binary.
+//
+// The loader is not among them: `packages/pixeldelta/load.js` names the
+// platform packages but not their version, so a bump leaves it alone.
 //
 // Usage:
 //
@@ -46,11 +44,6 @@ const pkgDir = join(root, 'packages', 'pixeldelta')
 const JSON_VERSION = /^(\s*"version":\s*")([^"]*)/m
 const CARGO_VERSION = /^(\[workspace\.package\](?:\n(?!\[).*)*?\nversion = ")([^"]*)/m
 
-// The two spots the generated loader embeds the version in, per platform: the
-// comparison and the message it throws. The file holds one pair per target, so
-// this one is written everywhere it matches rather than once.
-const LOADER_VERSION = /(bindingPackageVersion !== '|expected )(\d+\.\d+\.\d+[0-9A-Za-z.-]*)/
-
 // Same shape npm accepts: three numbers, with an optional prerelease tag.
 const VERSION = /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/
 
@@ -64,7 +57,6 @@ const manifests = () => {
     { path: join(root, 'Cargo.toml'), pattern: CARGO_VERSION },
     { path: join(pkgDir, 'package.json'), pattern: JSON_VERSION },
     ...platforms.map((path) => ({ path, pattern: JSON_VERSION })),
-    { path: join(pkgDir, 'index.js'), pattern: LOADER_VERSION, everywhere: true },
   ]
 }
 
@@ -101,10 +93,7 @@ const write = (version) => {
     // read throws when the pattern finds nothing, so a file that drifted out of
     // the shape this script edits is reported rather than skipped.
     const { text } = read(manifest)
-    const pattern = manifest.everywhere
-      ? new RegExp(manifest.pattern.source, `${manifest.pattern.flags}g`)
-      : manifest.pattern
-    const written = text.replace(pattern, `$1${version}`)
+    const written = text.replace(manifest.pattern, `$1${version}`)
     if (written !== text) {
       writeFileSync(manifest.path, written)
     }

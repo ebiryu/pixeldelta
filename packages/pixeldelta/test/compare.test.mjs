@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
-import { compare, compareSync } from '../index.js';
+import { compare, compareSync } from './binding.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixtures = join(here, '..', '..', '..', 'crates', 'pixeldelta-core', 'tests', 'fixtures');

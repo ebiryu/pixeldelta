@@ -18,7 +18,7 @@ of what the package offers.
 1. `smoke.test.mjs` loads the package by name and compares a fixture pair. The
    tarballs are extracted into a flat `node_modules` by hand, as npm lays them
    out, so this stage needs no package manager at all. It exercises the tarball
-   contents and the runtime resolution in `index.js` (root package to platform
+   contents and the runtime resolution in `load.js` (root package to platform
    package to binary).
 2. `cli.test.mjs` runs the executable through `pnpm run`, so the `bin` link
    under test is the one an install created. It checks that a package script
