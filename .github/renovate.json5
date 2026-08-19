@@ -25,6 +25,19 @@
   semanticCommitScope: "deps",
 
   packageRules: [
+    // napi-rs links the WebAssembly build against the archive that `emnapi`
+    // carries, and refuses to build unless it, `@emnapi/core` and
+    // `@emnapi/runtime` hold the same version. Naming them together keeps one
+    // of them from moving alone. This rule comes before the manager groups
+    // below so that a minor or a patch is taken over by the npm group and
+    // rides in that week's pull request, while a major, which that group
+    // leaves out, keeps this name and arrives as one pull request rather than
+    // three.
+    {
+      matchPackageNames: ["emnapi", "@emnapi/core", "@emnapi/runtime"],
+      groupName: "emnapi",
+    },
+
     // One pull request per manager per week. Majors are left out of the
     // groups: they are the updates read by hand, and one of them sitting
     // unmerged would hold the rest of that week's updates with it.
