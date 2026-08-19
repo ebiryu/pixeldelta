@@ -51,7 +51,9 @@ document.querySelectorAll('.entry').forEach(entry => {
       const x = ((e.touches ? e.touches[0].clientX : e.clientX) - r.left) / r.width;
       stage.style.setProperty('--split', Math.max(0, Math.min(1, x)) * 100 + '%');
     };
-    handle.addEventListener('mousedown', () => drag = true);
+    // The default action of a mousedown on the handle starts a text
+    // selection that the drag then extends across both images.
+    handle.addEventListener('mousedown', e => { e.preventDefault(); drag = true; });
     handle.addEventListener('touchstart', () => drag = true, { passive: true });
     window.addEventListener('mousemove', move);
     window.addEventListener('touchmove', move, { passive: true });

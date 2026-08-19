@@ -180,7 +180,7 @@ body {
   padding: 2px 7px; border-radius: 5px; background: color-mix(in srgb, var(--surface) 80%, transparent);
   color: var(--text-dim); border: 1px solid var(--border);
 }
-.pane img { display: block; width: 100%; height: auto; }
+.pane img { display: block; width: 100%; height: auto; -webkit-user-drag: none; }
 /* The frame is sized to the image so the cluster rectangles, placed as
    percentages of it, stay aligned with the image at every zoom level. In
    `fit` mode it takes the pane's full width; the zoom levels below fix it to
@@ -201,6 +201,10 @@ body {
 .stage:not([data-zoom="fit"]) .pane img { image-rendering: pixelated; }
 .cluster-rect { position: absolute; border: 1.5px dashed var(--accent); pointer-events: none; z-index: 2; }
 
+/* The handle is dragged across the images, and a drag over an image is also
+   a text selection: without this the browser paints a selection highlight
+   over the comparison. */
+.m-overlay { -webkit-user-select: none; user-select: none; }
 .stack { position: relative; }
 .stack .layer { position: absolute; inset: 0; }
 .stack .base { position: relative; }
@@ -318,7 +322,9 @@ document.querySelectorAll('.entry').forEach(entry => {
       const x = ((e.touches ? e.touches[0].clientX : e.clientX) - r.left) / r.width;
       stage.style.setProperty('--split', Math.max(0, Math.min(1, x)) * 100 + '%');
     };
-    handle.addEventListener('mousedown', () => drag = true);
+    // The default action of a mousedown on the handle starts a text
+    // selection that the drag then extends across both images.
+    handle.addEventListener('mousedown', e => { e.preventDefault(); drag = true; });
     handle.addEventListener('touchstart', () => drag = true, { passive: true });
     window.addEventListener('mousemove', move);
     window.addEventListener('touchmove', move, { passive: true });
