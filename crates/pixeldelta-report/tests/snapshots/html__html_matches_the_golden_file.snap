@@ -204,7 +204,9 @@ body {
 .stack { position: relative; }
 .stack .layer { position: absolute; inset: 0; }
 .stack .base { position: relative; }
-.stage[data-mode="slider"] .stack .top { clip-path: inset(0 calc(100% - var(--split)) 0 0); }
+/* Actual is revealed from the right, leaving expected on the left, so the two
+   sides sit where the side-by-side panes put them. */
+.stage[data-mode="slider"] .stack .top { clip-path: inset(0 0 0 var(--split)); }
 .stage[data-mode="onion"] .stack .top { opacity: var(--op); clip-path: none; }
 .handle {
   position: absolute; top: 0; bottom: 0; left: var(--split); width: 2px; background: var(--accent);
