@@ -163,13 +163,17 @@ body {
    screenshot, whose cap is a sliver, still gets a readable width. */
 .m-diff, .m-overlay { max-width: var(--cap, none); min-width: min(100%, 520px); }
 .pane { position: relative; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--surface-2); }
-.pane .cap {
-  position: absolute; top: 6px; left: 6px; z-index: 3;
-  font-family: var(--mono); font-size: 10.5px; letter-spacing: .03em;
-  padding: 2px 7px; border-radius: 5px; background: color-mix(in srgb, var(--surface) 80%, transparent);
-  color: var(--text-dim); border: 1px solid var(--border);
+/* The caption sits above the pane, not over the image: drawn in the image's
+   top-left corner it hides the very pixels the reader came to compare. A
+   caption naming two sides pushes them to the edges they label. */
+.cap {
+  display: flex; justify-content: space-between; gap: 10px; margin: 0 2px 5px;
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .03em; color: var(--text-dim);
 }
-.pane img { display: block; width: 100%; height: auto; }
+/* Grid items default to their content's minimum width; the caption row would
+   otherwise hold a column open wider than its share. */
+.grid3 > .pane-wrap, .single > .pane-wrap { min-width: 0; }
+.pane img { display: block; width: 100%; height: auto; -webkit-user-drag: none; }
 /* The frame is sized to the image so the cluster rectangles, placed as
    percentages of it, stay aligned with the image at every zoom level. In
    `fit` mode it takes the pane's full width; the zoom levels below fix it to
@@ -190,10 +194,20 @@ body {
 .stage:not([data-zoom="fit"]) .pane img { image-rendering: pixelated; }
 .cluster-rect { position: absolute; border: 1.5px dashed var(--accent); pointer-events: none; z-index: 2; }
 
+/* The handle is dragged across the images, and a drag over an image is also
+   a text selection: without this the browser paints a selection highlight
+   over the comparison. */
+.m-overlay { -webkit-user-select: none; user-select: none; }
+/* Only the slider mode has a left side and a right side to name. */
+.m-overlay .cap-blend { display: none; }
+.stage[data-mode="onion"] .cap-split { display: none; }
+.stage[data-mode="onion"] .cap-blend { display: flex; }
 .stack { position: relative; }
 .stack .layer { position: absolute; inset: 0; }
 .stack .base { position: relative; }
-.stage[data-mode="slider"] .stack .top { clip-path: inset(0 calc(100% - var(--split)) 0 0); }
+/* Actual is revealed from the right, leaving expected on the left, so the two
+   sides sit where the side-by-side panes put them. */
+.stage[data-mode="slider"] .stack .top { clip-path: inset(0 0 0 var(--split)); }
 .stage[data-mode="onion"] .stack .top { opacity: var(--op); clip-path: none; }
 .handle {
   position: absolute; top: 0; bottom: 0; left: var(--split); width: 2px; background: var(--accent);

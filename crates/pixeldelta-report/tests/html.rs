@@ -87,6 +87,22 @@ fn a_cluster_rect_is_emitted_inside_the_same_frame_as_the_diff_image() {
 }
 
 #[test]
+fn a_caption_sits_outside_the_pane_it_names() {
+    let out = html(&sample::sample_report(), local_assets);
+
+    // Inside the pane the caption is drawn over the screenshot's top-left
+    // corner, which is as likely to hold a difference as anywhere else.
+    assert!(
+        out.contains("<span class=\"cap\">expected</span><div class=\"pane\">"),
+        "{out}"
+    );
+    assert!(
+        !out.contains("<div class=\"pane\"><span class=\"cap\">"),
+        "{out}"
+    );
+}
+
+#[test]
 fn a_path_with_a_space_and_non_ascii_is_percent_encoded_in_the_src() {
     let report = Report {
         threshold: 0.1,

@@ -223,19 +223,29 @@ fn write_changed_body(
         stage_cap(entry)
     )
     .unwrap();
-    out.push_str("<div class=\"pane m-diff\"><span class=\"cap\">diff</span><div class=\"frame\">");
+    out.push_str(
+        "<div class=\"pane-wrap m-diff\"><span class=\"cap\">diff</span>\
+         <div class=\"pane\"><div class=\"frame\">",
+    );
     img(out, src(entry, Side::Diff).as_deref(), "diff");
     write_cluster_rects(out, entry);
-    out.push_str("</div></div><div class=\"grid3 m-side\">");
+    out.push_str("</div></div></div><div class=\"grid3 m-side\">");
     pane(out, "expected", src(entry, Side::Expected));
     pane(out, "actual", src(entry, Side::Actual));
+    // The overlay puts expected under actual and reveals actual from the
+    // right, so its caption names the side each edge of the frame is showing,
+    // the same way round as the panes above. Blended, neither edge is one
+    // side alone, so the onion mode gets a caption of its own.
     out.push_str(
-        "</div><div class=\"pane stack m-overlay\"><div class=\"frame\"><div class=\"base\">",
+        "</div><div class=\"pane-wrap m-overlay\">\
+         <span class=\"cap cap-split\"><span>expected</span><span>actual</span></span>\
+         <span class=\"cap cap-blend\">expected + actual</span>\
+         <div class=\"pane stack\"><div class=\"frame\"><div class=\"base\">",
     );
     img(out, src(entry, Side::Expected).as_deref(), "expected");
     out.push_str("</div><div class=\"layer top\">");
     img(out, src(entry, Side::Actual).as_deref(), "actual");
-    out.push_str("</div><div class=\"handle\"></div></div></div></div>");
+    out.push_str("</div><div class=\"handle\"></div></div></div></div></div>");
 
     write_clusters(out, entry);
 }
@@ -366,15 +376,20 @@ fn single(out: &mut String, cap: &str, url: Option<String>) {
     out.push_str("</div>");
 }
 
+/// Writes one captioned image box.
+///
+/// The caption is a sibling of the pane rather than a child, so it is laid
+/// out above the image instead of over its top-left corner.
 fn pane(out: &mut String, cap: &str, url: Option<String>) {
     write!(
         out,
-        "<div class=\"pane\"><span class=\"cap\">{}</span><div class=\"frame\">",
+        "<div class=\"pane-wrap\"><span class=\"cap\">{}</span>\
+         <div class=\"pane\"><div class=\"frame\">",
         escape(cap)
     )
     .unwrap();
     img(out, url.as_deref(), cap);
-    out.push_str("</div></div>");
+    out.push_str("</div></div></div>");
 }
 
 /// Writes one image tag.
