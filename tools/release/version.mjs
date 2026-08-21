@@ -24,7 +24,11 @@
 //                                             disagreeing files and exit 1
 //   node tools/release/version.mjs 0.1.0      write that version to all of them
 //
-// `just release` calls the second form. Nothing here commits, tags or pushes.
+// A release writes them through release-please, which is given the same list in
+// `release-please-config.json`. The check above is what holds the two lists
+// together: a manifest missing from the config keeps its old version, and the
+// release pull request fails on it. The second form is for setting a version by
+// hand. Nothing here commits, tags or pushes.
 
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'

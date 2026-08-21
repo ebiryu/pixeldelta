@@ -1,0 +1,38 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "release-type": "node",
+  "include-component-in-tag": false,
+  "bump-minor-pre-major": true,
+  "pull-request-title-pattern": "release: v${version}",
+  "pull-request-header": "The versions and the changelog entry this release carries. Merging it tags `v<version>`, which is what starts the npm publish.",
+  "changelog-sections": [
+    { "type": "feat", "section": "Features" },
+    { "type": "fix", "section": "Bug Fixes" },
+    { "type": "perf", "section": "Performance Improvements" },
+    { "type": "build", "section": "Build System" },
+    { "type": "deps", "section": "Dependencies" },
+    { "type": "revert", "section": "Reverts" },
+    { "type": "refactor", "section": "Code Refactoring", "hidden": true },
+    { "type": "docs", "section": "Documentation", "hidden": true },
+    { "type": "test", "section": "Tests", "hidden": true },
+    { "type": "ci", "section": "Continuous Integration", "hidden": true },
+    { "type": "chore", "section": "Miscellaneous Chores", "hidden": true },
+    { "type": "style", "section": "Styles", "hidden": true }
+  ],
+  "packages": {
+    ".": {
+      "extra-files": [
+        { "type": "generic", "path": "Cargo.toml" },
+        { "type": "json", "path": "packages/pixeldelta/package.json", "jsonpath": "$.version" },
+        { "type": "json", "path": "packages/pixeldelta/npm/darwin-arm64/package.json", "jsonpath": "$.version" },
+        { "type": "json", "path": "packages/pixeldelta/npm/darwin-x64/package.json", "jsonpath": "$.version" },
+        { "type": "json", "path": "packages/pixeldelta/npm/linux-arm64-gnu/package.json", "jsonpath": "$.version" },
+        { "type": "json", "path": "packages/pixeldelta/npm/linux-x64-gnu/package.json", "jsonpath": "$.version" },
+        { "type": "json", "path": "packages/pixeldelta/npm/linux-x64-musl/package.json", "jsonpath": "$.version" },
+        { "type": "json", "path": "packages/pixeldelta/npm/wasm/package.json", "jsonpath": "$.version" },
+        { "type": "json", "path": "packages/pixeldelta/npm/wasm32-wasi/package.json", "jsonpath": "$.version" },
+        { "type": "json", "path": "packages/pixeldelta/npm/win32-x64-msvc/package.json", "jsonpath": "$.version" }
+      ]
+    }
+  }
+}

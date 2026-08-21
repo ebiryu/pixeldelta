@@ -1,0 +1,68 @@
+# Keeps a release pull request in step with what has landed on main, and tags
+# the release when that pull request is merged.
+#
+# release-please reads the Conventional Commits since the last v tag, works out
+# the next version, and writes it into CHANGELOG.md and every manifest listed in
+# release-please-config.json. Merging the pull request creates the tag v<version>
+# and the GitHub release; the tag is what starts the publish job in ci.yml.
+#
+# Nothing here publishes. Whether to release is the decision of merging the pull
+# request, and until then no tag exists.
+name: Release
+
+on:
+  push:
+    branches: [main]
+  # Rebuilds the pull request without waiting for a push, after a change to the
+  # release configuration.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  release-please:
+    name: Release pull request
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        id: release
+
+      # The steps below finish the pull request release-please just wrote. They
+      # run on its branch, and amend its commit so the pull request stays at one
+      # commit whichever way it is merged.
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        if: ${{ steps.release.outputs.prs_created == 'true' }}
+        with:
+          ref: ${{ fromJSON(steps.release.outputs.pr).headBranchName }}
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        if: ${{ steps.release.outputs.prs_created == 'true' }}
+        with:
+          node-version-file: .node-version
+      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        if: ${{ steps.release.outputs.prs_created == 'true' }}
+        with:
+          toolchain: stable 1 weeks ago
+      # The workspace members carry the version into Cargo.lock, which
+      # release-please has no updater for. cargo writes it, so that the lock file
+      # is not edited by a second set of rules.
+      #
+      # The version check is the guard on release-please-config.json: it names
+      # the manifests to write, tools/release/version.mjs names the manifests
+      # that have to agree, and a name missing from the first fails here.
+      - name: Complete the release commit
+        if: ${{ steps.release.outputs.prs_created == 'true' }}
+        run: |
+          set -eu
+          node tools/release/version.mjs
+          cargo update --workspace
+          if [ -z "$(git status --porcelain)" ]; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit --all --amend --no-edit
+          git push --force-with-lease
