@@ -1,9 +1,9 @@
 // Checks pixeldelta-wasm, the package a host with no prebuild installs.
 //
-// It carries the same WebAssembly build as pixeldelta-wasm32-wasi, without the
-// platform fields that keep a package manager from installing that one. What
-// the loaders inside it read has to be listed in `files`, or the package
-// installs and then throws when something requires it.
+// It carries the same WebAssembly build as pixeldelta-wasm32-wasi, under a name
+// the consumer installs rather than one napi-rs manages. What the loaders inside
+// it read has to be listed in `files`, or the package installs and then throws
+// when something requires it.
 //
 // scripts/place-wasm.mjs copies those loaders in from beside this package and
 // checks that each listed file arrived. The checks here are the other half:
@@ -28,9 +28,8 @@ const source = (file) => readFileSync(join(pkgDir, file), 'utf8');
 
 test('the package carries no platform fields', () => {
   assert.equal(wasm.name, 'pixeldelta-wasm');
-  // pixeldelta-wasm32-wasi declares cpu: ["wasm32"], which matches no host, so
-  // npm refuses it and pnpm skips it. Declaring nothing is what makes this one
-  // installable everywhere, and is the reason it exists.
+  // Declaring nothing is what makes this one installable everywhere, and is the
+  // reason it exists: nothing else in the tree reaches a host with no prebuild.
   assert.equal(wasm.cpu, undefined);
   assert.equal(wasm.os, undefined);
   assert.equal(wasm.libc, undefined);

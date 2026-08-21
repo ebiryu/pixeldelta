@@ -1,11 +1,11 @@
 // The entry `main` names, so this is what `require('pixeldelta')` reaches.
 //
 // load.js finds the prebuilt addon for the host, and behind it the WebAssembly
-// build in pixeldelta-wasm32-wasi. That package declares `cpu: ["wasm32"]`,
-// which no package manager matches against a real host, so it never arrives
-// through the optional dependencies and the lookup runs out of things to try.
-// pixeldelta-wasm carries the same WebAssembly build with no platform fields,
-// so it installs anywhere, and this file reaches for it before giving up.
+// build in pixeldelta-wasm32-wasi. An install never brings that package in: it
+// stays out of the optional dependencies, which a package manager resolves one
+// entry at a time, so listing it would pull the .wasm onto every host as well.
+// pixeldelta-wasm carries the same WebAssembly build under a name the consumer
+// installs, and this file reaches for it before giving up.
 
 const FALLBACK = 'pixeldelta-wasm'
 
