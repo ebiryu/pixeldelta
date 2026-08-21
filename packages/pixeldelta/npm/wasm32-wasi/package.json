@@ -1,6 +1,6 @@
 {
   "name": "pixeldelta-wasm32-wasi",
-  "version": "0.2.6",
+  "version": "0.2.7",
   "type": "module",
   "main": "pixeldelta.wasi.cjs",
   "types": "pixeldelta.wasi.d.cts",

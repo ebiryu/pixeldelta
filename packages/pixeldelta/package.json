@@ -1,6 +1,6 @@
 {
   "name": "pixeldelta",
-  "version": "0.2.6",
+  "version": "0.2.7",
   "description": "Fast image comparison engine with difference clustering",
   "license": "MIT",
   "repository": {
