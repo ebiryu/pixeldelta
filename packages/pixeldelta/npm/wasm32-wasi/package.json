@@ -1,13 +1,14 @@
 {
   "name": "pixeldelta-wasm32-wasi",
   "version": "0.2.6",
-  "cpu": [
-    "wasm32"
-  ],
+  "type": "module",
   "main": "pixeldelta.wasi.cjs",
+  "types": "pixeldelta.wasi.d.cts",
+  "browser": "pixeldelta.wasi-browser.js",
   "files": [
     "pixeldelta.wasm32-wasi.wasm",
     "pixeldelta.wasi.cjs",
+    "pixeldelta.wasi.d.cts",
     "pixeldelta.wasi-browser.js",
     "wasi-worker.mjs",
     "wasi-worker-browser.mjs"
@@ -22,7 +23,6 @@
     "url": "git+https://github.com/ebiryu/pixeldelta.git",
     "directory": "packages/pixeldelta"
   },
-  "browser": "pixeldelta.wasi-browser.js",
   "dependencies": {
     "@napi-rs/wasm-runtime": "^1.1.6",
     "@emnapi/core": "1.11.3",

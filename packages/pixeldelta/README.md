@@ -102,11 +102,10 @@ that fallback, and the command reports which platforms ship it.
 
 `pixeldelta-wasm` holds the same engine built for `wasm32-wasip1-threads`, and
 `require('pixeldelta')` reaches it when no prebuild matched the host. It is a
-separate install rather than an optional dependency because a WebAssembly
-package declares `cpu: ["wasm32"]`, which matches no host: npm refuses such a
-package and pnpm skips it, so one listed as an optional dependency never
-arrives. `pixeldelta-wasm` declares no platform at all, which is what lets a
-package manager install it.
+separate install rather than an optional dependency because a package manager
+resolves optional dependencies one entry at a time: listing the WebAssembly
+build there would download it onto every host, whether or not a prebuild
+matched. Installing it by hand keeps that download on the hosts that need it.
 
 The API is the same and so are the results: every comparison timed below returns
 the same diff pixel count either way. Three things behave differently.
