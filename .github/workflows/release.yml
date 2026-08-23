@@ -34,7 +34,7 @@ jobs:
       # The steps below finish the pull request release-please just wrote. They
       # run on its branch, and amend its commit so the pull request stays at one
       # commit whichever way it is merged.
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: ${{ steps.release.outputs.prs_created == 'true' }}
         with:
           ref: ${{ fromJSON(steps.release.outputs.pr).headBranchName }}
@@ -42,7 +42,7 @@ jobs:
         if: ${{ steps.release.outputs.prs_created == 'true' }}
         with:
           node-version-file: .node-version
-      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
         if: ${{ steps.release.outputs.prs_created == 'true' }}
         with:
           toolchain: stable 1 weeks ago
