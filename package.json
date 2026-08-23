@@ -1,6 +1,6 @@
 {
   "name": "pixeldelta-workspace",
-  "version": "0.0.0",
+  "version": "0.2.7",
   "private": true,
   "description": "Workspace root for the pixeldelta npm packages",
   "packageManager": "pnpm@11.16.0",

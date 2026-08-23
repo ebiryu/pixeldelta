@@ -207,6 +207,31 @@ that every manifest carries the same version, a one-minute fuzz run, one pass of
 the benchmarks, the addon build for every published target, and an install of
 the packed package into an empty project.
 
+## Releasing
+
+A release is built from the commit messages, so the type and scope on a commit
+decide both what version comes next and what the changelog says.
+
+A push to `main` runs `.github/workflows/release.yml`, which opens or rewrites a
+pull request titled `release: v<version>`. That pull request carries the new
+version in `Cargo.toml`, `Cargo.lock` and every npm manifest, together with the
+changelog entry built from the commits since the last tag. `feat` raises the
+minor version and anything else the patch; while the version is below 1.0.0, a
+`BREAKING CHANGE` footer raises the minor rather than the major. The changelog
+lists `feat`, `fix`, `perf` and `build`, and anything scoped `deps` under
+Dependencies; the remaining types are left out of it and still take part in the
+version bump.
+
+Merging that pull request creates the tag `v<version>` and the GitHub release.
+The tag starts the publish job in `.github/workflows/ci.yml`, which builds every
+published target and publishes to npm over OIDC. Until the pull request is
+merged there is no tag, and nothing reaches npm.
+
+The GitHub release therefore appears before npm carries the version, because the
+tag the publish job runs on is created along with the release. A publish that
+fails leaves a release for a version npm does not have; re-running the failed
+job on that tag is what resolves it.
+
 ## Reporting a bug
 
 Include the two images or a reduction of them, the command or the call that was

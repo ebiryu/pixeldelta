@@ -9,9 +9,10 @@ members = [
 resolver = "2"
 
 [workspace.package]
-# The npm package is what gets released; `just release` writes this to match
-# `packages/pixeldelta/package.json`, which `pixeldelta --version` then reports.
-version = "0.2.7"
+# The npm package is what gets released; the release pull request writes this to
+# match `packages/pixeldelta/package.json`, which `pixeldelta --version` then
+# reports. The marker at the end of the line is what release-please rewrites.
+version = "0.2.7" # x-release-please-version
 edition = "2021"
 rust-version = "1.88"
 license = "MIT"
