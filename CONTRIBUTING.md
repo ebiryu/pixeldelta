@@ -36,8 +36,10 @@ you think the reasoning behind one no longer holds.
 
 ### Prerequisites
 
-- **Rust**, stable, installed through [rustup](https://rustup.rs). Some recipes
-  install another toolchain themselves, which a distribution package cannot do.
+- **Rust**, installed through [rustup](https://rustup.rs), which takes the
+  version from [rust-toolchain.toml](rust-toolchain.toml) and installs it on the
+  first `cargo` call. Some recipes install another toolchain beside it, which a
+  distribution package cannot do.
 - **Node**, the version in [.node-version](.node-version).
 - **pnpm**, the version in the `packageManager` field of
   [package.json](package.json). `corepack enable` picks it up.

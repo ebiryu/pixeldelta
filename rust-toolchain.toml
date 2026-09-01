@@ -1,0 +1,12 @@
+# The toolchain CI and a workstation both build with. rustup reads this file, so
+# no job names a version of its own and `just check` runs what CI runs.
+#
+# Naming an exact version means a release that adds a clippy lint turns one pull
+# request red: the one renovate opens to move this line. A channel here would
+# fail whichever pull request was open when the release landed, which says
+# nothing about the change under review.
+
+[toolchain]
+channel = "1.98.0"
+profile = "minimal"
+components = ["clippy", "rustfmt"]

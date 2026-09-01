@@ -5,6 +5,9 @@
 # Windows, the napi-rs Docker images for the Linux ABIs, and a plain runner for
 # the WebAssembly (WASI) fallback. Each job leaves one binary as an artifact,
 # and the publish job gathers them into the platform packages.
+#
+# No job names a Rust version: rust-toolchain.toml does. The jobs that need a
+# different one say so with `cargo +<toolchain>`.
 name: CI
 
 env:
@@ -45,10 +48,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
-        with:
-          toolchain: stable 1 weeks ago
-          components: rustfmt, clippy
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - run: cargo fmt --all -- --check
       - run: cargo clippy --all-targets --all-features -- -D warnings
@@ -73,20 +72,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
-        with:
-          toolchain: stable 1 weeks ago
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - run: rustup toolchain install 1.88 --profile minimal
       - run: cargo +1.88 check --workspace --all-targets
 
   # A bounded run of the decoder fuzz target, starting from fuzz/seeds/decode.
   # `decode` is where bytes from outside the process enter pixeldelta, and a
   # panic there aborts the Node process instead of raising an exception.
   #
-  # libfuzzer-sys builds only on nightly, so this is the one job off the pinned
-  # stable toolchain, and `publish` leaves it out of `needs`: a nightly that
-  # breaks should not hold a release. What keeps a fixed crash from coming back
-  # is the corpus replay in `cargo test`, which the `check` job runs on stable.
+  # libfuzzer-sys builds only on nightly, so `cargo +nightly` overrides the
+  # pinned toolchain here, and `publish` leaves this job out of `needs`: a
+  # nightly that breaks should not hold a release. What keeps a fixed crash
+  # from coming back is the corpus replay in `cargo test`, which the `check`
+  # job runs on stable.
   #
   # A minute is enough to cover the corpus and the mutations near it. Longer
   # runs belong on a workstation, through `just fuzz`.
@@ -95,9 +93,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
-        with:
-          toolchain: nightly
+      - run: rustup toolchain install nightly --profile minimal
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: fuzz
@@ -105,7 +101,7 @@ jobs:
       # libFuzzer requires the directory it writes what it finds to to exist.
       # It is not committed, so the job creates it.
       - run: mkdir -p fuzz/corpus/decode
-      - run: cargo fuzz run decode fuzz/corpus/decode fuzz/seeds/decode -- -max_total_time=60
+      - run: cargo +nightly fuzz run decode fuzz/corpus/decode fuzz/seeds/decode -- -max_total_time=60
       # Reproducing a crash needs the input it was found on, which otherwise
       # goes away with the runner.
       - name: Upload the failing input
@@ -129,9 +125,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
-        with:
-          toolchain: stable 1 weeks ago
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: bench
@@ -197,10 +190,7 @@ jobs:
         with:
           node-version-file: .node-version
           cache: pnpm
-      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
-        with:
-          toolchain: stable 1 weeks ago
-          targets: ${{ matrix.settings.target }}
+      - run: rustup target add ${{ matrix.settings.target }}
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: ${{ matrix.settings.target }}
@@ -338,9 +328,6 @@ jobs:
         with:
           node-version-file: .node-version
           cache: pnpm
-      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
-        with:
-          toolchain: stable 1 weeks ago
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: smoke

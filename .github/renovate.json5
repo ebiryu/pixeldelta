@@ -1,13 +1,17 @@
 // Opens the updates that the pins would otherwise hold back: Cargo.lock and
-// pnpm-lock.yaml hold what is built, `packageManager` and .node-version hold
-// the toolchains every job runs on, and each workflow step names its action by
-// commit SHA.
+// pnpm-lock.yaml hold what is built, `packageManager`, .node-version and
+// rust-toolchain.toml hold the toolchains every job runs on, and each workflow
+// step names its action by commit SHA.
 //
 // This runs as the Mend-hosted Renovate app, so this file is the whole setup.
 //
 // What it opens, the maintainer merges once CI is green. The two it cannot
 // decide are read by hand: an update that raises the minimum supported Rust
 // version above 1.88, and a major version bump.
+//
+// A Rust toolchain update can arrive red: a release that adds a clippy lint
+// fails the check job on that pull request. The change answering the lint goes
+// on its own branch.
 {
   $schema: "https://docs.renovatebot.com/renovate-schema.json",
   extends: ["config:recommended", "helpers:pinGitHubActionDigests"],
@@ -18,7 +22,13 @@
 
   // Everything the repository pins, listed so that a file added later cannot
   // bring a manager along with it unnoticed.
-  enabledManagers: ["cargo", "npm", "github-actions", "nodenv"],
+  enabledManagers: [
+    "cargo",
+    "npm",
+    "github-actions",
+    "nodenv",
+    "rust-toolchain",
+  ],
 
   semanticCommits: "enabled",
   semanticCommitType: "chore",
