@@ -42,10 +42,6 @@ jobs:
         if: ${{ steps.release.outputs.prs_created == 'true' }}
         with:
           node-version-file: .node-version
-      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
-        if: ${{ steps.release.outputs.prs_created == 'true' }}
-        with:
-          toolchain: stable 1 weeks ago
       # The workspace members carry the version into Cargo.lock, which
       # release-please has no updater for. cargo writes it, so that the lock file
       # is not edited by a second set of rules.
