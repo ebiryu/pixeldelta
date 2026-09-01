@@ -448,7 +448,7 @@ const LARGE_SIDE: u32 = 1024;
 fn large_pair(nth: usize) -> (Vec<u8>, Vec<u8>) {
     let base = solid(LARGE_SIDE, LARGE_SIDE, [0, 0, 0, 255]);
     let mut changed = base.clone();
-    for pixel in changed.chunks_exact_mut(4).step_by(nth) {
+    for pixel in changed.as_chunks_mut::<4>().0.iter_mut().step_by(nth) {
         pixel.copy_from_slice(&[255, 255, 255, 255]);
     }
     (base, changed)
