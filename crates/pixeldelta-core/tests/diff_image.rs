@@ -56,7 +56,7 @@ fn a_matching_comparison_renders_only_background() {
         .expect("a diff image was asked for");
 
     // No pixel differs, so none carries the diff color.
-    for pixel in diff.data.chunks_exact(4) {
+    for &pixel in diff.data.as_chunks::<4>().0 {
         assert_ne!(pixel, [255, 0, 0, 255]);
         assert_eq!(pixel[0], pixel[1]);
         assert_eq!(pixel[1], pixel[2]);

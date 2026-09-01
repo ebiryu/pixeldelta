@@ -87,7 +87,7 @@ fn check_palette(len: usize) -> Result<(), DecodeError> {
 /// Turns gray-plus-alpha pairs into RGBA quadruples.
 fn spread_gray(buffer: &[u8]) -> Vec<u8> {
     let mut data = Vec::with_capacity(buffer.len() * 2);
-    for pair in buffer.chunks_exact(2) {
+    for pair in buffer.as_chunks::<2>().0 {
         data.extend_from_slice(&[pair[0], pair[0], pair[0], pair[1]]);
     }
     data
