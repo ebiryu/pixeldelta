@@ -19,7 +19,7 @@ png = "0.18"
 proptest = "1.11.0"
 # Runs the benchmarks in benches/ and keeps the previous measurement to
 # compare against.
-criterion = "0.7"
+criterion = "0.8"
 
 [[bench]]
 name = "compare"

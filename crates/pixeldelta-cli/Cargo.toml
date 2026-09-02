@@ -35,8 +35,8 @@ ureq = "3"
 # Signs S3 requests with SigV4, which is HMAC-SHA256 over a canonical form of
 # the request. Writing SHA-256 and HMAC by hand is about 200 lines of code that
 # has to be right the first time.
-hmac = "0.12"
-sha2 = "0.10"
+hmac = "0.13"
+sha2 = "0.11"
 # Runs the per-file read-decode-compare work of `run_dirs` across a
 # work-stealing thread pool, and the per-object storage requests in
 # storage.rs across a second, dedicated pool. pixeldelta-core already depends
