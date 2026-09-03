@@ -3,7 +3,7 @@
   "version": "0.2.7",
   "private": true,
   "description": "Workspace root for the pixeldelta npm packages",
-  "packageManager": "pnpm@11.16.0",
+  "packageManager": "pnpm@11.25.0",
   "engines": {
     "node": ">= 16"
   }
