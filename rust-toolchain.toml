@@ -7,6 +7,6 @@
 # nothing about the change under review.
 
 [toolchain]
-channel = "1.98.0"
+channel = "1.98.1"
 profile = "minimal"
 components = ["clippy", "rustfmt"]
