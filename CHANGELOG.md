@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.8](https://github.com/ebiryu/pixeldelta/compare/v0.2.7...v0.2.8) (2026-10-23)
+
+
+### Bug Fixes
+
+* **ci:** check out the full history before amending the release commit ([#23](https://github.com/ebiryu/pixeldelta/issues/23)) ([5fd63b1](https://github.com/ebiryu/pixeldelta/commit/5fd63b16c32c865bb6b73340e0d342b9446ee849))
+* **deps:** update cargo dependencies ([#11](https://github.com/ebiryu/pixeldelta/issues/11)) ([bcbd1c9](https://github.com/ebiryu/pixeldelta/commit/bcbd1c9eb10a063dbeed7801ea6215c9c85adb71))
+
 ## [0.2.7](https://github.com/ebiryu/pixeldelta/compare/v0.2.6...v0.2.7) (2026-08-22)
 
 ### Bug Fixes
@@ -136,4 +144,3 @@
 
 * **core:** skip chunks of eight pixels that are byte for byte equal ([984f47c](https://github.com/ebiryu/pixeldelta/commit/984f47c5849ebe2981b0115c02353f1682ad1b17))
 * **core:** scan row blocks in parallel with rayon ([2fe151f](https://github.com/ebiryu/pixeldelta/commit/2fe151fb63fc1843118430f284905d6240013157))
-
