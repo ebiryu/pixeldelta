@@ -50,10 +50,10 @@
     "version": "napi version"
   },
   "devDependencies": {
-    "@emnapi/core": "1.11.3",
-    "@emnapi/runtime": "1.11.3",
+    "@emnapi/core": "2.0.0-beta.2",
+    "@emnapi/runtime": "2.0.0-beta.2",
     "@napi-rs/cli": "^3",
     "@napi-rs/wasm-runtime": "^1.1.6",
-    "emnapi": "1.11.3"
+    "emnapi": "2.0.0-beta.2"
   }
 }

@@ -11,40 +11,40 @@ importers:
   packages/pixeldelta:
     devDependencies:
       '@emnapi/core':
-        specifier: 1.11.3
-        version: 1.11.3
+        specifier: 2.0.0-beta.2
+        version: 2.0.0-beta.2
       '@emnapi/runtime':
-        specifier: 1.11.3
-        version: 1.11.3
+        specifier: 2.0.0-beta.2
+        version: 2.0.0-beta.2
       '@napi-rs/cli':
         specifier: ^3
-        version: 3.8.6(@emnapi/core@1.11.3)(@emnapi/runtime@1.11.3)(emnapi@1.11.3)
+        version: 3.8.6(@emnapi/core@2.0.0-beta.2)(@emnapi/runtime@2.0.0-beta.2)(emnapi@2.0.0-beta.2)
       '@napi-rs/wasm-runtime':
         specifier: ^1.1.6
-        version: 1.2.3(@emnapi/core@1.11.3)(@emnapi/runtime@1.11.3)
+        version: 1.2.3(@emnapi/core@2.0.0-beta.2)(@emnapi/runtime@2.0.0-beta.2)
       emnapi:
-        specifier: 1.11.3
-        version: 1.11.3
+        specifier: 2.0.0-beta.2
+        version: 2.0.0-beta.2
 
 packages:
 
   '@emnapi/core@1.11.2':
     resolution: {integrity: sha512-TC8MkTuZUtcTSiFeuC0ksCh9QIJ5+F21MvZ4Wn4ORfYaFJ/0dsiudv5tVkejgwZlwQ39jL9WWDe2lz8x0WglOA==}
 
-  '@emnapi/core@1.11.3':
-    resolution: {integrity: sha512-zLpS5asjEb7lq8jYLq37N6XKaE41DIexlY1rF/z4/tIl3wo13Sqm28fRyfIsKZD+NZ8mM5RoKkpW/rBcuoSZSg==}
-
   '@emnapi/core@1.9.2':
     resolution: {integrity: sha512-UC+ZhH3XtczQYfOlu3lNEkdW/p4dsJ1r/bP7H8+rhao3TTTMO1ATq/4DdIi23XuGoFY+Cz0JmCbdVl0hz9jZcA==}
+
+  '@emnapi/core@2.0.0-beta.2':
+    resolution: {integrity: sha512-MzCVoWtcg4Pm2B3je5mMvYMvj3MmBKw+fU7vbsJc9/iT8ip6/eYIHo/Dsm/mr+wsHB6SEyJDuxB09Yy6r/8+4A==}
 
   '@emnapi/runtime@1.11.2':
     resolution: {integrity: sha512-kyOl3X0DuTiT1h2ft8r2fYO8JYtU9a9Xis/zBSiGArNaagCOWx90N1k2wxp18czFDH+OgcWGb5ZP/XMt3dcyPA==}
 
-  '@emnapi/runtime@1.11.3':
-    resolution: {integrity: sha512-Xz4Tpyki7XyrpbUK1jR1AhdAdaXyhhY4lZ3neLodmhpuWfy2PAQN5B46sAiU4liOXGLkHypn/qU+jvfWSCYYLA==}
-
   '@emnapi/runtime@1.9.2':
     resolution: {integrity: sha512-3U4+MIWHImeyu1wnmVygh5WlgfYDtyf0k8AbLhMFxOipihf6nrWC4syIm/SwEeec0mNSafiiNnMJwbza/Is6Lw==}
+
+  '@emnapi/runtime@2.0.0-beta.2':
+    resolution: {integrity: sha512-JcrSPzPvZuNZvJqPTF9Fw25LbOJ8avzFVlaf2grmH4Cku0oGP47tRgqPZadcfj3YoZMHkFVnCYFbQM8I+i5QEw==}
 
   '@emnapi/wasi-threads@1.2.1':
     resolution: {integrity: sha512-uTII7OYF+/Mes/MrcIOYp5yOtSMLBWSIoLPpcgwipoiKbli6k322tcoFsxoIIxPDqW01SQGAgko4EzZi2BNv2w==}
@@ -52,8 +52,8 @@ packages:
   '@emnapi/wasi-threads@1.2.2':
     resolution: {integrity: sha512-c95qOXkHdydNKhscBTebqEC1CVAZpyqOfVfBzQ1qgzyl3gfeldUjIggDbIZgDKsHLgnsM+igH7TJ/eAasaVuMA==}
 
-  '@emnapi/wasi-threads@1.2.3':
-    resolution: {integrity: sha512-ELEBe8PsLvvJ6QMr0zLt8ffvOHW/dc1m3CEzNMg7aJUv3bMaoDtw2TXyDAwkYBuroxxuHEwhRTLJSe5sya547g==}
+  '@emnapi/wasi-threads@2.2.0':
+    resolution: {integrity: sha512-JP7OYH38Q7+pyTAe14raZHLQIK7BDKbdwji+Xi3pcd/6QkJYQH3SX4wu6EplGrGJWRepoNzedfm0G3B9Z4e9Rw==}
 
   '@inquirer/ansi@2.0.7':
     resolution: {integrity: sha512-3eTuUO1vH2cZm2ZKHeQxnOqlTi9EfZDGgIe3BL3I4u+rJHocr9Fz86M4fjYABPvFnQG/gGK551HqDiIcETwU6Q==}
@@ -644,8 +644,8 @@ packages:
       supports-color:
         optional: true
 
-  emnapi@1.11.3:
-    resolution: {integrity: sha512-+/ZS90YK/rYfVOHtGLHkGffVsnmD/MAKaBHio+Y4XAtg75RLr4cveV/w0jTkUdLM1CcAlaRgG76mpIemWAlk0A==}
+  emnapi@2.0.0-beta.2:
+    resolution: {integrity: sha512-ZO2KS7bFQNo8zcDl5nWW55nvZBfC+msrGRezZn6OoJJQKXGOWVp6RYw25wdJkDIIADrAJjf4XEQAbtancmeH7w==}
     peerDependencies:
       node-addon-api: '>= 6.1.0'
     peerDependenciesMeta:
@@ -720,30 +720,30 @@ snapshots:
       tslib: 2.8.1
     optional: true
 
-  '@emnapi/core@1.11.3':
-    dependencies:
-      '@emnapi/wasi-threads': 1.2.3
-      tslib: 2.8.1
-
   '@emnapi/core@1.9.2':
     dependencies:
       '@emnapi/wasi-threads': 1.2.1
       tslib: 2.8.1
     optional: true
 
+  '@emnapi/core@2.0.0-beta.2':
+    dependencies:
+      '@emnapi/wasi-threads': 2.2.0
+      tslib: 2.8.1
+
   '@emnapi/runtime@1.11.2':
     dependencies:
       tslib: 2.8.1
     optional: true
 
-  '@emnapi/runtime@1.11.3':
-    dependencies:
-      tslib: 2.8.1
-
   '@emnapi/runtime@1.9.2':
     dependencies:
       tslib: 2.8.1
     optional: true
+
+  '@emnapi/runtime@2.0.0-beta.2':
+    dependencies:
+      tslib: 2.8.1
 
   '@emnapi/wasi-threads@1.2.1':
     dependencies:
@@ -755,7 +755,7 @@ snapshots:
       tslib: 2.8.1
     optional: true
 
-  '@emnapi/wasi-threads@1.2.3':
+  '@emnapi/wasi-threads@2.2.0':
     dependencies:
       tslib: 2.8.1
 
@@ -850,7 +850,7 @@ snapshots:
 
   '@inquirer/type@4.0.7': {}
 
-  '@napi-rs/cli@3.8.6(@emnapi/core@1.11.3)(@emnapi/runtime@1.11.3)(emnapi@1.11.3)':
+  '@napi-rs/cli@3.8.6(@emnapi/core@2.0.0-beta.2)(@emnapi/runtime@2.0.0-beta.2)(emnapi@2.0.0-beta.2)':
     dependencies:
       '@inquirer/prompts': 8.5.2
       '@napi-rs/cross-toolchain': 1.0.3
@@ -865,9 +865,9 @@ snapshots:
       typanion: 3.14.0
       typescript: 6.0.3
     optionalDependencies:
-      '@emnapi/core': 1.11.3
-      '@emnapi/runtime': 1.11.3
-      emnapi: 1.11.3
+      '@emnapi/core': 2.0.0-beta.2
+      '@emnapi/runtime': 2.0.0-beta.2
+      emnapi: 2.0.0-beta.2
     transitivePeerDependencies:
       - '@napi-rs/cross-toolchain-arm64-target-aarch64'
       - '@napi-rs/cross-toolchain-arm64-target-armv7'
@@ -1043,18 +1043,18 @@ snapshots:
       '@tybys/wasm-util': 0.10.3
     optional: true
 
-  '@napi-rs/wasm-runtime@1.2.3(@emnapi/core@1.11.3)(@emnapi/runtime@1.11.3)':
-    dependencies:
-      '@emnapi/core': 1.11.3
-      '@emnapi/runtime': 1.11.3
-      '@tybys/wasm-util': 0.10.3
-
   '@napi-rs/wasm-runtime@1.2.3(@emnapi/core@1.9.2)(@emnapi/runtime@1.9.2)':
     dependencies:
       '@emnapi/core': 1.9.2
       '@emnapi/runtime': 1.9.2
       '@tybys/wasm-util': 0.10.3
     optional: true
+
+  '@napi-rs/wasm-runtime@1.2.3(@emnapi/core@2.0.0-beta.2)(@emnapi/runtime@2.0.0-beta.2)':
+    dependencies:
+      '@emnapi/core': 2.0.0-beta.2
+      '@emnapi/runtime': 2.0.0-beta.2
+      '@tybys/wasm-util': 0.10.3
 
   '@napi-rs/wasm-tools-android-arm-eabi@1.1.0':
     optional: true
@@ -1208,7 +1208,7 @@ snapshots:
     dependencies:
       ms: 2.1.3
 
-  emnapi@1.11.3: {}
+  emnapi@2.0.0-beta.2: {}
 
   es-toolkit@1.51.0: {}
 
