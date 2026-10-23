@@ -4,7 +4,7 @@
 //! and the hash of the body, so a request cannot be altered in flight without
 //! invalidating it.
 
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use sha2::{Digest, Sha256};
 
 /// Credentials a request is signed with.
