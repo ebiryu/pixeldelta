@@ -1,0 +1,44 @@
+[package]
+name = "pixeldelta-cli"
+description = "Command-line image comparison for pixeldelta"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "pixeldelta"
+path = "src/main.rs"
+
+[dependencies]
+pixeldelta-core = { path = "../pixeldelta-core" }
+pixeldelta-io = { path = "../pixeldelta-io" }
+pixeldelta-report = { path = "../pixeldelta-report" }
+# Parses subcommands, positional arguments and flags, and generates --help.
+# Writing that by hand is hundreds of lines unrelated to comparison.
+clap = { version = "4.5", features = ["derive"] }
+# Derives Display and Error for CliError, which main turns into an exit code.
+thiserror = "2.0"
+# Reads and writes the snapshot manifest. Hand-written JSON would need string
+# escaping on the way out and a parser on the way in, about 80 lines that
+# serde_json already has, and the report crate already pulls it into the build.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Holds the baseline snapshot the `ci` subcommand fetches, which is discarded
+# once the comparison is done.
+tempfile = "3"
+# Sends the S3 and GitHub requests. Blocking, so the sequential work of the `ci`
+# subcommand does not pull an async runtime into the build.
+ureq = "3"
+# Signs S3 requests with SigV4, which is HMAC-SHA256 over a canonical form of
+# the request. Writing SHA-256 and HMAC by hand is about 200 lines of code that
+# has to be right the first time.
+hmac = "0.13"
+sha2 = "0.11"
+# Runs the per-file read-decode-compare work of `run_dirs` across a
+# work-stealing thread pool, and the per-object storage requests in
+# storage.rs across a second, dedicated pool. pixeldelta-core already depends
+# on it, so it adds no new crate to the build graph.
+rayon = "1.11"

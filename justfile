@@ -1,0 +1,130 @@
+# Task runner for pixeldelta. Run `just` to list the recipes.
+#
+# `just check` is what has to pass before a commit. The recipes below it apply
+# to particular kinds of work.
+
+_default:
+    @just --list
+
+# Everything that has to pass before a commit.
+check: fmt-check lint test
+
+# Reject formatting that differs from rustfmt's output.
+fmt-check:
+    cargo fmt --all -- --check
+
+# Apply rustfmt.
+fmt:
+    cargo fmt --all
+
+# Lint, treating warnings as errors.
+lint:
+    cargo clippy --all-targets --all-features -- -D warnings
+
+# Run the unit, integration, compatibility and property tests.
+#
+# The Node addon is left out: it is a cdylib against the N-API symbols Node
+# resolves at load time, so linking it into a test executable fails off macOS.
+# `just node` builds and tests it against Node instead.
+test:
+    cargo test --workspace --exclude pixeldelta-node
+
+# Build the Node addon and run its tests against Node. The crate lives in
+# crates/pixeldelta-node; the npm package that wraps it is packages/pixeldelta.
+#
+# The command-line executable is built too, and placed into the host's platform
+# package: the tests cover the launcher that a consumer's `pnpm run` reaches,
+# and it runs the executable rather than standing in for it.
+node:
+    pnpm install
+    pnpm --filter pixeldelta run build
+    pnpm --filter pixeldelta run build:cli
+    pnpm --filter pixeldelta test
+
+# Build the addon for WebAssembly (WASI) and run the library tests against it.
+#
+# This is the binding a host with no prebuild gets, so it has to load and
+# return the same counts as the native one. `just node` cannot cover it: the
+# loader prefers the native addon whenever one is present.
+#
+# The command-line tests are left out, because the WebAssembly package carries
+# no executable.
+#
+# It ends by assembling pixeldelta-wasm, which publishes this build to hosts
+# with no prebuild and to browsers. That step fails unless every file the
+# package lists has arrived beside its manifest.
+node-wasi:
+    rustup target add wasm32-wasip1-threads
+    pnpm install
+    cd packages/pixeldelta && pnpm build --target wasm32-wasip1-threads
+    pnpm --filter pixeldelta run test:wasi
+    cd packages/pixeldelta && node scripts/place-wasm.mjs
+
+# Pack the package and load it from an empty project, to check the published
+# layout resolves on the host. See tools/smoke/README.md.
+smoke:
+    bash tools/smoke/run.sh
+
+# Check dependency licenses and security advisories. Run after adding one.
+deny:
+    cargo deny check
+
+# Fuzz the decoder. Takes how many seconds to run, default 60:
+#
+#     just fuzz 600
+#
+# libfuzzer-sys builds only on nightly, so fuzz/ is a workspace of its own and
+# stays out of `just check`. What to do with a crash it finds is in
+# fuzz/README.md.
+fuzz seconds="60":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if ! cargo fuzz --version >/dev/null 2>&1; then
+        echo "cargo-fuzz is missing: cargo install --locked cargo-fuzz" >&2
+        exit 1
+    fi
+    rustup toolchain install nightly --profile minimal
+    # fuzz/seeds/decode is the committed set and is read only; fuzz/corpus/decode
+    # is where libFuzzer writes what it finds, and is not committed. libFuzzer
+    # requires the directory it writes to to exist.
+    mkdir -p fuzz/corpus/decode
+    cargo +nightly fuzz run decode fuzz/corpus/decode fuzz/seeds/decode \
+        -- -max_total_time={{seconds}}
+
+# Build at the MSRV, which the workspace pins to 1.88.
+msrv:
+    rustup toolchain install 1.88 --profile minimal
+    cargo +1.88 check --workspace --all-targets
+
+# Measure performance. Compare against target/criterion from before a change.
+bench:
+    cargo bench
+
+# Record a benchmark entry: run criterion and tools/bench, then insert one
+# entry at the top of BENCHMARKS.md. Takes minutes, since it runs criterion
+# over three sizes and the pixelmatch/odiff comparison on top of it. Entries
+# are comparable only against another entry taken on the same machine.
+bench-record:
+    cd tools/bench && pnpm install
+    node tools/bench/record.mjs
+
+# Regenerate the compatibility fixtures and the pixelmatch counts they are
+# checked against. A changed count in expected.txt moves the baseline, so read
+# the diff before committing it.
+[doc("Regenerate the compatibility fixtures and their pixelmatch counts.")]
+fixtures:
+    cd tools/fixtures && pnpm install && node generate.mjs
+
+# Regenerate the benchmark fixtures. Every past measurement was taken against
+# the committed images, so running this discards the basis for comparison.
+bench-fixtures:
+    cd tools/fixtures && pnpm install && node bench.mjs
+
+# Print the version, or the manifests that disagree on it.
+#
+# Bumping the version is not a local step. A push to main updates a release pull
+# request that writes the new version into every manifest and adds the changelog
+# entry; merging it tags the release, and the tag is what publishes to npm.
+[doc("Print the version, or the manifests that disagree on it.")]
+version:
+    node tools/release/version.mjs

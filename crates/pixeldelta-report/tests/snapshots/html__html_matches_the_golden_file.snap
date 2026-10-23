@@ -1,0 +1,377 @@
+---
+source: crates/pixeldelta-report/tests/html.rs
+expression: "html(&sample::sample_report(), local_assets)"
+---
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pixeldelta report</title>
+<style>
+:root {
+  --bg: #eef1f5;
+  --surface: #ffffff;
+  --surface-2: #f4f6f9;
+  --border: #d8dee6;
+  --border-strong: #c2cad4;
+  --text: #1a1e26;
+  --text-dim: #5c6572;
+  --text-faint: #8994a2;
+  --accent: #0e9aa4;
+  --accent-ink: #0b6f77;
+  --matched: #2f9e44; --matched-bg: #e7f4ea;
+  --changed: #b5791a; --changed-bg: #f8efdc;
+  --size: #d43a3f; --size-bg: #fbe6e7;
+  --added: #2f6fdb; --added-bg: #e6eefb;
+  --removed: #8a56c9; --removed-bg: #f0e9fa;
+  --tolerated: #5c6572; --tolerated-bg: #e9ecf1;
+  --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Menlo", monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --radius: 10px;
+  --shadow: 0 1px 2px rgba(20, 28, 40, .06), 0 4px 14px rgba(20, 28, 40, .05);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0c0f14; --surface: #141922; --surface-2: #1a2029; --border: #262d38;
+    --border-strong: #333c49; --text: #e7ebf1; --text-dim: #939dab; --text-faint: #67707d;
+    --accent: #3fd0d8; --accent-ink: #7fe3e8;
+    --matched: #4bbf63; --matched-bg: #16281c; --changed: #e0a63a; --changed-bg: #2c2413;
+    --size: #f2646a; --size-bg: #2e1618; --added: #66a0ff; --added-bg: #14213b;
+    --removed: #b98cf0; --removed-bg: #221a34;
+    --tolerated: #939dab; --tolerated-bg: #20262f;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 6px 18px rgba(0,0,0,.28);
+  }
+}
+:root[data-theme="light"] {
+  --bg: #eef1f5; --surface: #fff; --surface-2: #f4f6f9; --border: #d8dee6;
+  --border-strong: #c2cad4; --text: #1a1e26; --text-dim: #5c6572; --text-faint: #8994a2;
+  --accent: #0e9aa4; --accent-ink: #0b6f77;
+  --matched: #2f9e44; --matched-bg: #e7f4ea; --changed: #b5791a; --changed-bg: #f8efdc;
+  --size: #d43a3f; --size-bg: #fbe6e7; --added: #2f6fdb; --added-bg: #e6eefb;
+  --removed: #8a56c9; --removed-bg: #f0e9fa;
+  --tolerated: #5c6572; --tolerated-bg: #e9ecf1;
+  --shadow: 0 1px 2px rgba(20,28,40,.06), 0 4px 14px rgba(20,28,40,.05);
+}
+:root[data-theme="dark"] {
+  --bg: #0c0f14; --surface: #141922; --surface-2: #1a2029; --border: #262d38;
+  --border-strong: #333c49; --text: #e7ebf1; --text-dim: #939dab; --text-faint: #67707d;
+  --accent: #3fd0d8; --accent-ink: #7fe3e8;
+  --matched: #4bbf63; --matched-bg: #16281c; --changed: #e0a63a; --changed-bg: #2c2413;
+  --size: #f2646a; --size-bg: #2e1618; --added: #66a0ff; --added-bg: #14213b;
+  --removed: #b98cf0; --removed-bg: #221a34;
+  --tolerated: #939dab; --tolerated-bg: #20262f;
+  --shadow: 0 1px 2px rgba(0,0,0,.3), 0 6px 18px rgba(0,0,0,.28);
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font-family: var(--sans); line-height: 1.5; -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 1440px; margin: 0 auto; padding: 0 20px 64px; }
+
+.app-header {
+  position: sticky; top: 0; z-index: 10;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(8px); border-bottom: 1px solid var(--border);
+}
+.app-header .wrap { padding-top: 16px; padding-bottom: 16px; }
+.brandrow { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.mark {
+  width: 30px; height: 30px; border-radius: 8px; flex: none;
+  background: linear-gradient(135deg, var(--accent), var(--accent-ink));
+  display: grid; place-items: center; color: #fff; font-weight: 700;
+  font-family: var(--mono); box-shadow: var(--shadow);
+}
+.brandrow h1 { font-size: 16px; margin: 0; letter-spacing: -.01em; }
+.brandrow .sub { font-family: var(--mono); font-size: 12px; color: var(--text-faint); }
+.verdict-pill {
+  margin-left: auto; display: inline-flex; align-items: center; gap: 7px;
+  padding: 6px 12px; border-radius: 999px; font-weight: 600; font-size: 13px;
+  background: var(--size-bg); color: var(--size);
+}
+.verdict-pill .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+
+.summary { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+.chip {
+  display: inline-flex; align-items: baseline; gap: 7px;
+  padding: 7px 12px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--surface); cursor: pointer; user-select: none;
+  font-size: 13px; color: var(--text-dim); transition: border-color .12s, background .12s;
+}
+.chip:hover { border-color: var(--border-strong); }
+.chip[aria-pressed="true"] { border-color: var(--accent); background: var(--surface-2); }
+.chip .n { font-family: var(--mono); font-weight: 700; font-size: 15px; color: var(--text); }
+.chip .swatch { width: 9px; height: 9px; border-radius: 2px; align-self: center; }
+.chip.c-changed .swatch { background: var(--changed); }
+.chip.c-added .swatch { background: var(--added); }
+.chip.c-removed .swatch { background: var(--removed); }
+.chip.c-size .swatch { background: var(--size); }
+.chip.c-tolerated .swatch { background: var(--tolerated); }
+.chip.c-matched .swatch { background: var(--matched); }
+
+.params {
+  margin-top: 12px; display: flex; gap: 16px; flex-wrap: wrap;
+  font-family: var(--mono); font-size: 12px; color: var(--text-faint);
+}
+.params b { color: var(--text-dim); font-weight: 600; }
+
+.entries { margin-top: 24px; display: flex; flex-direction: column; gap: 14px; }
+.entry {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden;
+}
+.entry-head { display: flex; align-items: center; gap: 14px; padding: 14px 16px; cursor: pointer; }
+.stripe { width: 3px; align-self: stretch; border-radius: 3px; flex: none; }
+.entry.changed .stripe { background: var(--changed); }
+.entry.size .stripe { background: var(--size); }
+.entry.added .stripe { background: var(--added); }
+.entry.removed .stripe { background: var(--removed); }
+.entry.tolerated .stripe { background: var(--tolerated); }
+.entry.matched .stripe { background: var(--matched); }
+
+.path { font-family: var(--mono); font-size: 13.5px; color: var(--text); word-break: break-all; }
+.path .dir { color: var(--text-faint); }
+.badge {
+  font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  padding: 3px 8px; border-radius: 5px; flex: none;
+}
+.badge.changed { background: var(--changed-bg); color: var(--changed); }
+.badge.size { background: var(--size-bg); color: var(--size); }
+.badge.added { background: var(--added-bg); color: var(--added); }
+.badge.removed { background: var(--removed-bg); color: var(--removed); }
+.badge.tolerated { background: var(--tolerated-bg); color: var(--tolerated); }
+.badge.matched { background: var(--matched-bg); color: var(--matched); }
+.metrics { margin-left: auto; display: flex; gap: 18px; align-items: baseline; flex: none; }
+.metric { text-align: right; }
+.metric .v { font-family: var(--mono); font-weight: 700; font-size: 14px; font-variant-numeric: tabular-nums; }
+.metric .k { font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-faint); }
+.chev { flex: none; color: var(--text-faint); transition: transform .18s; }
+.entry.open .chev { transform: rotate(90deg); }
+
+.body { border-top: 1px solid var(--border); padding: 16px; display: none; }
+.entry.open .body { display: block; }
+
+.viewer-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+.seg { display: inline-flex; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 3px; gap: 2px; }
+.seg button {
+  font: inherit; font-size: 12.5px; border: 0; background: transparent; color: var(--text-dim);
+  padding: 5px 11px; border-radius: 6px; cursor: pointer;
+}
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+.onion-ctl { display: none; align-items: center; gap: 8px; font-size: 12px; color: var(--text-dim); font-family: var(--mono); }
+
+.stage { --split: 50%; --op: 0.5; }
+.grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+.stage > .m-diff, .stage > .m-side, .stage > .m-overlay { display: none; }
+.stage[data-mode="diff"] > .m-diff { display: block; }
+.stage[data-mode="side"] > .m-side { display: grid; grid-template-columns: 1fr 1fr; }
+.stage[data-mode="slider"] > .m-overlay,
+.stage[data-mode="onion"] > .m-overlay { display: block; }
+/* `--cap` turns the image aspect ratio into a width, and is absent when the
+   entry has no image size. `min-width` wins over `max-width`, so a full-page
+   screenshot, whose cap is a sliver, still gets a readable width. */
+.m-diff, .m-overlay { max-width: var(--cap, none); min-width: min(100%, 520px); }
+.pane { position: relative; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--surface-2); }
+/* The caption sits above the pane, not over the image: drawn in the image's
+   top-left corner it hides the very pixels the reader came to compare. A
+   caption naming two sides pushes them to the edges they label. */
+.cap {
+  display: flex; justify-content: space-between; gap: 10px; margin: 0 2px 5px;
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .03em; color: var(--text-dim);
+}
+/* Grid items default to their content's minimum width; the caption row would
+   otherwise hold a column open wider than its share. */
+.grid3 > .pane-wrap, .single > .pane-wrap { min-width: 0; }
+.pane img { display: block; width: 100%; height: auto; -webkit-user-drag: none; }
+/* The frame is sized to the image so the cluster rectangles, placed as
+   percentages of it, stay aligned with the image at every zoom level. In
+   `fit` mode it takes the pane's full width; the zoom levels below fix it to
+   a multiple of the image's natural width (`--iw`) and let the pane scroll. */
+.frame { position: relative; width: 100%; }
+.stage[data-zoom="1"] .frame { width: var(--iw); }
+.stage[data-zoom="2"] .frame { width: calc(var(--iw) * 2); }
+.stage[data-zoom="4"] .frame { width: calc(var(--iw) * 4); }
+.stage:not([data-zoom="fit"]) .pane { overflow: auto; max-height: 52vh; }
+/* `max-content` keeps the pane from leaving an empty band beside an image
+   whose zoomed width is under the space available. The side-by-side panes are
+   grid items and keep their column's width, which `max-content` would widen
+   past the row. */
+.stage:not([data-zoom="fit"]) > .m-diff,
+.stage:not([data-zoom="fit"]) > .m-overlay {
+  width: max-content; max-width: 100%;
+}
+.stage:not([data-zoom="fit"]) .pane img { image-rendering: pixelated; }
+.cluster-rect { position: absolute; border: 1.5px dashed var(--accent); pointer-events: none; z-index: 2; }
+
+/* The handle is dragged across the images, and a drag over an image is also
+   a text selection: without this the browser paints a selection highlight
+   over the comparison. */
+.m-overlay { -webkit-user-select: none; user-select: none; }
+/* Only the slider mode has a left side and a right side to name. */
+.m-overlay .cap-blend { display: none; }
+.stage[data-mode="onion"] .cap-split { display: none; }
+.stage[data-mode="onion"] .cap-blend { display: flex; }
+.stack { position: relative; }
+.stack .layer { position: absolute; inset: 0; }
+.stack .base { position: relative; }
+/* Actual is revealed from the right, leaving expected on the left, so the two
+   sides sit where the side-by-side panes put them. */
+.stage[data-mode="slider"] .stack .top { clip-path: inset(0 0 0 var(--split)); }
+.stage[data-mode="onion"] .stack .top { opacity: var(--op); clip-path: none; }
+.handle {
+  position: absolute; top: 0; bottom: 0; left: var(--split); width: 2px; background: var(--accent);
+  transform: translateX(-1px); z-index: 4; cursor: ew-resize;
+}
+.handle::after {
+  content: ""; position: absolute; top: 50%; left: 50%; width: 22px; height: 22px;
+  transform: translate(-50%,-50%); border-radius: 50%; background: var(--accent); box-shadow: var(--shadow);
+}
+.stage[data-mode="onion"] .handle { display: none; }
+input[type="range"] { accent-color: var(--accent); }
+
+.clusters { margin-top: 16px; }
+.clusters h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-faint); margin: 0 0 8px; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+thead th {
+  text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--text-faint); font-weight: 600; padding: 6px 10px; border-bottom: 1px solid var(--border);
+}
+tbody td { padding: 8px 10px; border-bottom: 1px solid var(--border); font-family: var(--mono); font-variant-numeric: tabular-nums; }
+tbody tr:last-child td { border-bottom: 0; }
+.tag { font-family: var(--sans); font-size: 11.5px; font-weight: 600; padding: 2px 8px; border-radius: 999px; }
+.tag.moved { background: var(--added-bg); color: var(--added); }
+.tag.color { background: var(--changed-bg); color: var(--changed); }
+.ssim-bar { display: inline-flex; align-items: center; gap: 6px; }
+.ssim-bar .track { width: 54px; height: 5px; border-radius: 3px; background: var(--border); overflow: hidden; }
+.ssim-bar .fill { height: 100%; background: var(--matched); }
+
+/* A reference view of one image, with no diff to line up against, so it takes
+   a fixed width rather than the aspect ratio's. */
+.single { display: grid; grid-template-columns: minmax(0, 720px); gap: 10px; }
+.inline-note { margin: 12px 0 0; font-size: 12.5px; color: var(--text-dim); }
+
+#theme {
+  position: fixed; bottom: 16px; right: 16px; z-index: 20; border: 1px solid var(--border);
+  background: var(--surface); color: var(--text-dim); font: inherit; font-size: 12px;
+  padding: 7px 12px; border-radius: 8px; cursor: pointer; box-shadow: var(--shadow);
+}
+
+@media (max-width: 720px) {
+  .stage[data-mode="side"] > .m-side { grid-template-columns: 1fr; }
+  .metrics { display: none; }
+}
+
+</style>
+</head>
+<body>
+<header class="app-header"><div class="wrap"><div class="brandrow"><div class="mark">Δ</div><div><h1>pixeldelta report</h1><div class="sub">expected/ ⟷ actual/</div></div><span class="verdict-pill"><span class="dot"></span> FAIL</span></div><div class="summary" id="summary"><button class="chip c-changed" aria-pressed="true" data-cat="changed"><span class="swatch"></span><span class="n">1</span> changed</button><button class="chip c-added" aria-pressed="true" data-cat="added"><span class="swatch"></span><span class="n">1</span> added</button><button class="chip c-removed" aria-pressed="true" data-cat="removed"><span class="swatch"></span><span class="n">1</span> removed</button><button class="chip c-size" aria-pressed="true" data-cat="size"><span class="swatch"></span><span class="n">1</span> size mismatch</button><button class="chip c-tolerated" aria-pressed="true" data-cat="tolerated"><span class="swatch"></span><span class="n">1</span> tolerated</button><button class="chip c-matched" aria-pressed="false" data-cat="matched"><span class="swatch"></span><span class="n">1</span> matched</button></div><div class="params"><span><b>threshold</b> 0.10</span><span><b>tolerance</b> 0.001</span><span><b>antialiasing</b> on</span><span><b>layout-shift</b> on</span></div></div></header>
+<main class="wrap"><div class="entries" id="entries">
+<article class="entry changed open" data-cat="changed"><div class="entry-head"><span class="stripe"></span><span class="path"><span class="dir">components/button/</span>primary.png</span><span class="badge changed">changed</span><div class="metrics"><div class="metric"><div class="v">1,284</div><div class="k">diff px</div></div><div class="metric"><div class="v">2.01%</div><div class="k">ratio</div></div><div class="metric"><div class="v">14</div><div class="k">clusters</div></div></div><svg class="chev" width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div><div class="body"><div class="viewer-bar"><div class="seg" role="tablist"><button aria-pressed="true" data-mode="diff">Diff</button><button aria-pressed="false" data-mode="side">Side by side</button><button aria-pressed="false" data-mode="slider">Slider</button><button aria-pressed="false" data-mode="onion">Onion</button></div><div class="seg" role="tablist"><button aria-pressed="true" data-zoom="fit">fit</button><button aria-pressed="false" data-zoom="1">1:1</button><button aria-pressed="false" data-zoom="2">2x</button><button aria-pressed="false" data-zoom="4">4x</button></div><div class="onion-ctl">expected<input type="range" min="0" max="100" value="50" class="op-range">actual</div></div><div class="stage" data-mode="diff" data-zoom="fit" style="--cap:calc(52vh * 320 / 200);--iw:320px"><div class="pane-wrap m-diff"><span class="cap">diff</span><div class="pane"><div class="frame"><img src="images/diff/components/button/primary.png" alt="diff" loading="lazy"><div class="cluster-rect" style="left:4.375%;top:69.000%;width:30.000%;height:17.000%"></div><div class="cluster-rect" style="left:5.625%;top:20.000%;width:41.250%;height:8.000%"></div></div></div></div><div class="grid3 m-side"><div class="pane-wrap"><span class="cap">expected</span><div class="pane"><div class="frame"><img src="images/expected/components/button/primary.png" alt="expected" loading="lazy"></div></div></div><div class="pane-wrap"><span class="cap">actual</span><div class="pane"><div class="frame"><img src="images/actual/components/button/primary.png" alt="actual" loading="lazy"></div></div></div></div><div class="pane-wrap m-overlay"><span class="cap cap-split"><span>expected</span><span>actual</span></span><span class="cap cap-blend">expected + actual</span><div class="pane stack"><div class="frame"><div class="base"><img src="images/expected/components/button/primary.png" alt="expected" loading="lazy"></div><div class="layer top"><img src="images/actual/components/button/primary.png" alt="actual" loading="lazy"></div><div class="handle"></div></div></div></div></div><div class="clusters"><h3>Clusters</h3><table><thead><tr><th>#</th><th>Bounds</th><th>Diff px</th><th>Classification</th><th>SSIM</th></tr></thead><tbody><tr><td>1</td><td>x14 y138 · 96×34</td><td>612</td><td><span class="tag moved">moved 4px down</span></td><td><span class="ssim-bar"><span class="track"><span class="fill" style="width:98%;background:var(--matched)"></span></span>0.981</span></td></tr><tr><td>2</td><td>x18 y40 · 132×16</td><td>672</td><td><span class="tag color">color change</span></td><td><span class="ssim-bar"><span class="track"><span class="fill" style="width:41%;background:var(--changed)"></span></span>0.412</span></td></tr></tbody></table><p class="inline-note">The 2 clusters with the most differing pixels are listed; 12 more are not.</p></div></div></article>
+<article class="entry size" data-cat="size"><div class="entry-head"><span class="stripe"></span><span class="path"><span class="dir">pages/</span>dashboard.png</span><span class="badge size">size mismatch</span><div class="metrics"><div class="metric"><div class="v">1280×864</div><div class="k">expected</div></div><div class="metric"><div class="v">1280×912</div><div class="k">actual</div></div></div><svg class="chev" width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div><div class="body"><div class="grid3" style="grid-template-columns:1fr 1fr"><div class="pane-wrap"><span class="cap">expected</span><div class="pane"><div class="frame"><img src="images/expected/pages/dashboard.png" alt="expected" loading="lazy"></div></div></div><div class="pane-wrap"><span class="cap">actual</span><div class="pane"><div class="frame"><img src="images/actual/pages/dashboard.png" alt="actual" loading="lazy"></div></div></div></div><p class="inline-note">Dimensions differ, so no diff was computed.</p></div></article>
+<article class="entry added" data-cat="added"><div class="entry-head"><span class="stripe"></span><span class="path"><span class="dir">components/</span>toast.png</span><span class="badge added">added</span><div class="metrics"><div class="metric"><div class="v">only in actual/</div><div class="k">source</div></div></div><svg class="chev" width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div><div class="body"><div class="single"><div class="pane-wrap"><span class="cap">actual</span><div class="pane"><div class="frame"><img src="images/actual/components/toast.png" alt="actual" loading="lazy"></div></div></div></div></div></article>
+<article class="entry removed" data-cat="removed"><div class="entry-head"><span class="stripe"></span><span class="path"><span class="dir">components/</span>banner-legacy.png</span><span class="badge removed">removed</span><div class="metrics"><div class="metric"><div class="v">only in expected/</div><div class="k">source</div></div></div><svg class="chev" width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div><div class="body"><div class="single"><div class="pane-wrap"><span class="cap">expected</span><div class="pane"><div class="frame"><img src="images/expected/components/banner-legacy.png" alt="expected" loading="lazy"></div></div></div></div></div></article>
+<article class="entry tolerated" data-cat="tolerated"><div class="entry-head"><span class="stripe"></span><span class="path"><span class="dir">components/</span>badge.png</span><span class="badge tolerated">tolerated</span><div class="metrics"><div class="metric"><div class="v">12</div><div class="k">diff px</div></div><div class="metric"><div class="v">0.07%</div><div class="k">ratio</div></div><div class="metric"><div class="v">1</div><div class="k">clusters</div></div></div><svg class="chev" width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div><div class="body"><div class="viewer-bar"><div class="seg" role="tablist"><button aria-pressed="true" data-mode="diff">Diff</button><button aria-pressed="false" data-mode="side">Side by side</button><button aria-pressed="false" data-mode="slider">Slider</button><button aria-pressed="false" data-mode="onion">Onion</button></div><div class="seg" role="tablist"><button aria-pressed="true" data-zoom="fit">fit</button><button aria-pressed="false" data-zoom="1">1:1</button><button aria-pressed="false" data-zoom="2">2x</button><button aria-pressed="false" data-zoom="4">4x</button></div><div class="onion-ctl">expected<input type="range" min="0" max="100" value="50" class="op-range">actual</div></div><div class="stage" data-mode="diff" data-zoom="fit" style="--cap:calc(52vh * 320 / 200);--iw:320px"><div class="pane-wrap m-diff"><span class="cap">diff</span><div class="pane"><div class="frame"><img src="images/diff/components/badge.png" alt="diff" loading="lazy"><div class="cluster-rect" style="left:1.250%;top:3.000%;width:3.125%;height:3.000%"></div></div></div></div><div class="grid3 m-side"><div class="pane-wrap"><span class="cap">expected</span><div class="pane"><div class="frame"><img src="images/expected/components/badge.png" alt="expected" loading="lazy"></div></div></div><div class="pane-wrap"><span class="cap">actual</span><div class="pane"><div class="frame"><img src="images/actual/components/badge.png" alt="actual" loading="lazy"></div></div></div></div><div class="pane-wrap m-overlay"><span class="cap cap-split"><span>expected</span><span>actual</span></span><span class="cap cap-blend">expected + actual</span><div class="pane stack"><div class="frame"><div class="base"><img src="images/expected/components/badge.png" alt="expected" loading="lazy"></div><div class="layer top"><img src="images/actual/components/badge.png" alt="actual" loading="lazy"></div><div class="handle"></div></div></div></div></div><div class="clusters"><h3>Clusters</h3><table><thead><tr><th>#</th><th>Bounds</th><th>Diff px</th><th>Classification</th><th>SSIM</th></tr></thead><tbody><tr><td>1</td><td>x4 y6 · 10×6</td><td>12</td><td><span class="tag color">color change</span></td><td><span class="ssim-bar"><span class="track"><span class="fill" style="width:100%;background:var(--matched)"></span></span>0.995</span></td></tr></tbody></table></div><p class="inline-note">Within the allowed difference ratio, so it does not fail the run.</p></div></article>
+<article class="entry matched" data-cat="matched"><div class="entry-head"><span class="stripe"></span><span class="path"><span class="dir">components/</span>checkbox.png</span><span class="badge matched">matched</span><div class="metrics"><div class="metric"><div class="v">0</div><div class="k">diff px</div></div></div><svg class="chev" width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div><div class="body"><div class="single"><div class="pane-wrap"><span class="cap">expected = actual</span><div class="pane"><div class="frame"><img src="images/expected/components/checkbox.png" alt="expected = actual" loading="lazy"></div></div></div></div><p class="inline-note">Identical within the threshold, so expected and actual are the same image.</p></div></article>
+</div></main>
+<button id="theme">theme</button>
+<script>
+// Expand / collapse entries.
+document.querySelectorAll('.entry-head').forEach(h => {
+  h.addEventListener('click', () => h.closest('.entry').classList.toggle('open'));
+});
+
+// Category filter.
+const chips = document.querySelectorAll('#summary .chip');
+function applyFilter() {
+  const on = new Set([...chips].filter(c => c.getAttribute('aria-pressed') === 'true').map(c => c.dataset.cat));
+  document.querySelectorAll('.entry').forEach(e => { e.hidden = !on.has(e.dataset.cat); });
+}
+chips.forEach(c => c.addEventListener('click', () => {
+  c.setAttribute('aria-pressed', c.getAttribute('aria-pressed') === 'true' ? 'false' : 'true');
+  applyFilter();
+}));
+applyFilter();
+
+// Viewer: mode switch, zoom switch, slider drag, onion opacity, side-by-side
+// scroll sync.
+document.querySelectorAll('.entry').forEach(entry => {
+  const stage = entry.querySelector('.stage');
+  if (!stage) return;
+  // Each segmented control only touches the buttons in its own group: the
+  // zoom control sits next to the mode control in the same `.seg` markup,
+  // and a shared selector would reset the wrong group's `aria-pressed`.
+  const modeBtns = entry.querySelectorAll('.seg button[data-mode]');
+  modeBtns.forEach(b => b.addEventListener('click', () => {
+    modeBtns.forEach(x => x.setAttribute('aria-pressed', 'false'));
+    b.setAttribute('aria-pressed', 'true');
+    const mode = b.dataset.mode;
+    stage.dataset.mode = mode;
+    const onionCtl = entry.querySelector('.onion-ctl');
+    if (onionCtl) onionCtl.style.display = mode === 'onion' ? 'flex' : 'none';
+  }));
+  const zoomBtns = entry.querySelectorAll('.seg button[data-zoom]');
+  zoomBtns.forEach(b => b.addEventListener('click', () => {
+    zoomBtns.forEach(x => x.setAttribute('aria-pressed', 'false'));
+    b.setAttribute('aria-pressed', 'true');
+    stage.dataset.zoom = b.dataset.zoom;
+  }));
+  const handle = stage.querySelector('.handle');
+  // The overlay's frame is sized to the image at the current zoom level, so
+  // it is what the drag position is measured against, not the `.stack` pane
+  // around it (which can be wider once the pane scrolls).
+  const frame = stage.querySelector('.m-overlay .frame');
+  if (handle && frame) {
+    let drag = false;
+    const move = e => {
+      if (!drag) return;
+      const r = frame.getBoundingClientRect();
+      const x = ((e.touches ? e.touches[0].clientX : e.clientX) - r.left) / r.width;
+      stage.style.setProperty('--split', Math.max(0, Math.min(1, x)) * 100 + '%');
+    };
+    // The default action of a mousedown on the handle starts a text
+    // selection that the drag then extends across both images.
+    handle.addEventListener('mousedown', e => { e.preventDefault(); drag = true; });
+    handle.addEventListener('touchstart', () => drag = true, { passive: true });
+    window.addEventListener('mousemove', move);
+    window.addEventListener('touchmove', move, { passive: true });
+    window.addEventListener('mouseup', () => drag = false);
+    window.addEventListener('touchend', () => drag = false);
+  }
+  const op = entry.querySelector('.op-range');
+  if (op) op.addEventListener('input', () => stage.style.setProperty('--op', op.value / 100));
+  // Mirror scroll position between the two side-by-side panes, so scrolling
+  // one at a zoom level moves the other to the same spot. Setting the other
+  // pane's position queues a scroll event of its own, which the browser fires
+  // before the next frame's callbacks, so `syncing` is cleared a frame later
+  // rather than on the next line. Clearing it synchronously would let the
+  // mirrored scroll write back to the pane the reader is dragging, which
+  // fights the drag whenever the two panes can scroll different distances.
+  const sidePanes = entry.querySelectorAll('.m-side .pane');
+  if (sidePanes.length === 2) {
+    const [a, b] = sidePanes;
+    let syncing = false;
+    const mirror = (from, to) => () => {
+      if (syncing) return;
+      syncing = true;
+      to.scrollLeft = from.scrollLeft;
+      to.scrollTop = from.scrollTop;
+      requestAnimationFrame(() => { syncing = false; });
+    };
+    a.addEventListener('scroll', mirror(a, b));
+    b.addEventListener('scroll', mirror(b, a));
+  }
+});
+
+// Theme toggle.
+const root = document.documentElement;
+document.getElementById('theme').addEventListener('click', () => {
+  const cur = root.getAttribute('data-theme')
+    || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  root.setAttribute('data-theme', cur === 'dark' ? 'light' : 'dark');
+});
+
+</script>
+</body>
+</html>

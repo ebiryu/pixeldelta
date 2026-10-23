@@ -1,0 +1,409 @@
+# Builds the Node addon for every published target, runs the Rust and Node
+# tests, and publishes to npm when a version tag is pushed.
+#
+# The build matrix follows the napi-rs layout: native runners for macOS and
+# Windows, the napi-rs Docker images for the Linux ABIs, and a plain runner for
+# the WebAssembly (WASI) fallback. Each job leaves one binary as an artifact,
+# and the publish job gathers them into the platform packages.
+#
+# No job names a Rust version: rust-toolchain.toml does. The jobs that need a
+# different one say so with `cargo +<toolchain>`.
+name: CI
+
+env:
+  APP_NAME: pixeldelta
+  # Matches the deployment target napi-rs builds its own macOS artifacts with.
+  MACOSX_DEPLOYMENT_TARGET: "10.13"
+
+# The publish job widens this to id-token: write for OIDC; every other job only
+# reads the checkout.
+permissions:
+  contents: read
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+  pull_request:
+  # Trusted publishing over OIDC cannot perform a package's first publish, so
+  # the platform package names do not exist until something creates them. This
+  # dispatch runs the same build and publishes with NPM_TOKEN, creating every
+  # name in one release. Once the names exist and each has a trusted publisher,
+  # the token is no longer used: tagged releases publish over OIDC.
+  workflow_dispatch:
+    inputs:
+      bootstrap:
+        description: "First release: publish with NPM_TOKEN instead of OIDC"
+        type: boolean
+        default: false
+
+jobs:
+  # The green-main invariant: formatting, lints and the workspace tests. The
+  # Node addon is left out here for the same reason `just test` leaves it out.
+  check:
+    name: Rust check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --all-targets --all-features -- -D warnings
+      - run: cargo test --workspace --exclude pixeldelta-node
+
+  # The manifests that carry the release version have to hold the same one.
+  # `just release` writes them together, so this catches a hand edit that
+  # reaches only some of them, before a tag is pushed at that state.
+  version:
+    name: Version consistency
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+      - run: node tools/release/version.mjs
+
+  # Builds at the MSRV so a newer feature slipping in is caught early.
+  msrv:
+    name: Build at MSRV 1.88
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - run: rustup toolchain install 1.88 --profile minimal
+      - run: cargo +1.88 check --workspace --all-targets
+
+  # A bounded run of the decoder fuzz target, starting from fuzz/seeds/decode.
+  # `decode` is where bytes from outside the process enter pixeldelta, and a
+  # panic there aborts the Node process instead of raising an exception.
+  #
+  # libfuzzer-sys builds only on nightly, so `cargo +nightly` overrides the
+  # pinned toolchain here, and `publish` leaves this job out of `needs`: a
+  # nightly that breaks should not hold a release. What keeps a fixed crash
+  # from coming back is the corpus replay in `cargo test`, which the `check`
+  # job runs on stable.
+  #
+  # A minute is enough to cover the corpus and the mutations near it. Longer
+  # runs belong on a workstation, through `just fuzz`.
+  fuzz:
+    name: Fuzz the decoder
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: rustup toolchain install nightly --profile minimal
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: fuzz
+      - run: cargo install --locked cargo-fuzz
+      # libFuzzer requires the directory it writes what it finds to to exist.
+      # It is not committed, so the job creates it.
+      - run: mkdir -p fuzz/corpus/decode
+      - run: cargo +nightly fuzz run decode fuzz/corpus/decode fuzz/seeds/decode -- -max_total_time=60
+      # Reproducing a crash needs the input it was found on, which otherwise
+      # goes away with the runner.
+      - name: Upload the failing input
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fuzz-artifacts
+          path: fuzz/artifacts
+          if-no-files-found: ignore
+
+  # Runs each benchmark once and does not look at the time: CI runners vary
+  # run to run, so a time threshold has no basis here. What it catches is a
+  # missing fixture or a benchmark that stopped running. `cargo clippy
+  # --all-targets` already compiles the benchmarks, so this covers only the
+  # runtime failure.
+  #
+  # `publish` leaves this out of `needs`: the benchmark is a development tool,
+  # and nothing that ships depends on it.
+  bench:
+    name: Run the benchmarks once
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: bench
+      - run: cargo bench --bench compare -p pixeldelta-core -- --test
+
+  build:
+    name: Build ${{ matrix.settings.target }}
+    runs-on: ${{ matrix.settings.host }}
+    strategy:
+      fail-fast: false
+      matrix:
+        settings:
+          # `cli` names the platform package the executable belongs to, and
+          # `cliTarget` what cargo builds it for. An entry without them ships
+          # the addon alone.
+          - host: macos-latest
+            target: aarch64-apple-darwin
+            build: pnpm build --target aarch64-apple-darwin
+            cli: darwin-arm64
+            cliTarget: aarch64-apple-darwin
+          - host: macos-latest
+            target: x86_64-apple-darwin
+            build: pnpm build --target x86_64-apple-darwin
+            cli: darwin-x64
+            cliTarget: x86_64-apple-darwin
+          - host: windows-latest
+            target: x86_64-pc-windows-msvc
+            build: pnpm build --target x86_64-pc-windows-msvc
+            cli: win32-x64-msvc
+            cliTarget: x86_64-pc-windows-msvc
+          # glibc targets cross-compile against the napi-rs toolchain (glibc
+          # 2.17), which keeps the binaries loadable on older distributions.
+          # cargo has no equivalent, so the executable pins the same glibc
+          # through cargo-zigbuild's versioned target.
+          - host: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            build: pnpm build --target x86_64-unknown-linux-gnu --use-napi-cross
+            zig: true
+            cli: linux-x64-gnu
+            cliTarget: x86_64-unknown-linux-gnu.2.17
+          - host: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            build: pnpm build --target aarch64-unknown-linux-gnu --use-napi-cross
+            zig: true
+            cli: linux-arm64-gnu
+            cliTarget: aarch64-unknown-linux-gnu.2.17
+          # musl cross-compiles with cargo-zigbuild, which needs Zig on PATH.
+          - host: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            zig: true
+            build: pnpm build --target x86_64-unknown-linux-musl -x
+            cli: linux-x64-musl
+            cliTarget: x86_64-unknown-linux-musl
+          # The executable is left out here: it runs git and opens TLS
+          # connections, and wasm32-wasip1 has no sockets.
+          - host: ubuntu-latest
+            target: wasm32-wasip1-threads
+            build: pnpm build --target wasm32-wasip1-threads
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: rustup target add ${{ matrix.settings.target }}
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: ${{ matrix.settings.target }}
+      # napi's -x cross build for musl runs cargo-zigbuild, which needs Zig.
+      - name: Set up Zig
+        if: ${{ matrix.settings.zig }}
+        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: 0.14.1
+      - run: pnpm install --frozen-lockfile
+      - name: Build
+        run: ${{ matrix.settings.build }}
+        working-directory: packages/pixeldelta
+        shell: bash
+      # Named after the platform package it belongs to, so the release job can
+      # gather every target into one directory and sort them out by name.
+      - name: Build the executable
+        if: ${{ matrix.settings.cli }}
+        shell: bash
+        run: |
+          set -eu
+          manifest=crates/pixeldelta-cli/Cargo.toml
+          if [ -n "${{ matrix.settings.zig }}" ]; then
+            cargo install --locked cargo-zigbuild
+            cargo zigbuild --release --manifest-path "$manifest" \
+              --target ${{ matrix.settings.cliTarget }}
+          else
+            cargo build --release --manifest-path "$manifest" \
+              --target ${{ matrix.settings.cliTarget }}
+          fi
+          # A versioned target such as x86_64-unknown-linux-gnu.2.17 still
+          # builds into the directory named after the plain triple.
+          triple=$(echo "${{ matrix.settings.cliTarget }}" | sed -E 's/\.[0-9.]+$//')
+          ext=""
+          case "${{ matrix.settings.cli }}" in win32-*) ext=".exe" ;; esac
+          cp "target/$triple/release/pixeldelta$ext" \
+            "packages/pixeldelta/pixeldelta-cli.${{ matrix.settings.cli }}$ext"
+      # The WebAssembly build also leaves a .debug.wasm beside the one that
+      # ships, and the loader prefers it wherever it finds it. Leaving it out
+      # keeps the test and publish jobs on the build a consumer gets.
+      - name: Upload the binaries
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: bindings-${{ matrix.settings.target }}
+          path: |
+            packages/pixeldelta/pixeldelta.*.node
+            packages/pixeldelta/pixeldelta.*.wasm
+            !packages/pixeldelta/pixeldelta.*.debug.wasm
+            packages/pixeldelta/pixeldelta-cli.*
+          if-no-files-found: error
+
+  # Runs the Node tests against the freshly built native binary, on the hosts a
+  # runner can execute directly. The cross-compiled builds are exercised by the
+  # `npm i` smoke test after release; the WASI build has its own job below.
+  test:
+    name: Test ${{ matrix.settings.target }}
+    needs: build
+    runs-on: ${{ matrix.settings.host }}
+    strategy:
+      fail-fast: false
+      matrix:
+        settings:
+          - host: macos-latest
+            target: aarch64-apple-darwin
+          - host: windows-latest
+            target: x86_64-pc-windows-msvc
+          - host: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: bindings-${{ matrix.settings.target }}
+          path: packages/pixeldelta
+      # An artifact is a zip, which carries no file modes, so this also puts
+      # the executable bit back.
+      - name: Place the executable in its platform package
+        run: node scripts/place-cli.mjs --artifacts .
+        working-directory: packages/pixeldelta
+      - run: pnpm --filter pixeldelta test
+
+  # Runs the library tests against the WebAssembly build, which is what a host
+  # outside the matrix loads. It runs on any host, so one runner covers it.
+  #
+  # The test script sets PIXELDELTA_TEST_WASI, which makes the tests load the
+  # WebAssembly build by name and fail when none is there. Without that the
+  # runner's own native prebuild would answer and the job would pass without
+  # touching the WebAssembly build.
+  test-wasi:
+    name: Test wasm32-wasip1-threads
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: bindings-wasm32-wasip1-threads
+          path: packages/pixeldelta
+      - run: pnpm --filter pixeldelta run test:wasi
+      # pixeldelta-wasm carries this build to hosts with no prebuild and to
+      # browsers. The script fails unless every file its manifest lists has
+      # arrived, so running it here catches a package that would install and
+      # then throw, on the one job that holds the .wasm.
+      - name: Assemble the WebAssembly package
+        run: node scripts/place-wasm.mjs
+        working-directory: packages/pixeldelta
+
+  # Packs the root package and the host's platform package and installs them
+  # into an empty project. This is the only check on the `files` list in
+  # packages/pixeldelta/package.json and on the bin link an install creates, so
+  # `publish` waits on it. tools/smoke/README.md describes the two stages and
+  # what they leave to the check against the registry after a release.
+  #
+  # tools/smoke/run.sh builds the host addon and executable itself, so this job
+  # does not wait on `build`, and it covers the host platform alone.
+  smoke:
+    name: Smoke test the package layout
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: smoke
+      - run: pnpm install --frozen-lockfile
+      - run: bash tools/smoke/run.sh
+
+  publish:
+    name: Publish
+    runs-on: ubuntu-latest
+    needs: [check, version, msrv, build, test, test-wasi, smoke]
+    if: ${{ github.ref_type == 'tag' || inputs.bootstrap }}
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+          registry-url: "https://registry.npmjs.org"
+      - run: pnpm install --frozen-lockfile
+      # What gets published is the version in packages/pixeldelta/package.json,
+      # so a tag naming a different one would leave no way to tell which commit
+      # a released version came from. The script exits non-zero on its own when
+      # the manifests hold different versions. The bootstrap dispatch runs off a
+      # branch and has no tag to compare against.
+      - name: Check the tag matches the version
+        run: |
+          set -eu
+          version=$(node tools/release/version.mjs)
+          if [ "${{ github.ref_type }}" = "tag" ] && [ "v$version" != "${{ github.ref_name }}" ]; then
+            echo "the tag ${{ github.ref_name }} does not match the version $version" >&2
+            exit 1
+          fi
+      - name: Gather the built binaries
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: packages/pixeldelta/artifacts
+          merge-multiple: true
+      - name: Move each binary into its platform package
+        run: pnpm --filter pixeldelta exec napi artifacts --output-dir ./artifacts
+        working-directory: packages/pixeldelta
+      # napi artifacts only moves .node and .wasm, so the executable is placed
+      # separately. This also sets the executable bit, which the artifact zip
+      # did not carry.
+      - name: Move each executable into its platform package
+        run: node scripts/place-cli.mjs --artifacts ./artifacts
+        working-directory: packages/pixeldelta
+      # pixeldelta-wasm is not one of napi's targets, so it is assembled and
+      # published here rather than by `napi prepublish`. It holds the same
+      # WebAssembly build as pixeldelta-wasm32-wasi, without the cpu field that
+      # keeps that one from being installed.
+      - name: Assemble the WebAssembly package
+        run: node scripts/place-wasm.mjs --artifacts ./artifacts
+        working-directory: packages/pixeldelta
+      # A tagged release publishes over OIDC: no token, and npm attaches
+      # provenance on its own. The bootstrap dispatch instead authenticates with
+      # NPM_TOKEN and turns provenance on by hand, which token publishes need.
+      # prepublish only ships the platform packages to npm; --no-gh-release keeps
+      # it from creating a GitHub release, which this job has no token or write
+      # permission for. Their publishConfig sets access public so provenance
+      # holds for the first publish of each new name.
+      #
+      # pixeldelta-wasm goes out before the root package, which is the one that
+      # reaches for it, and like the platform packages it needs the bootstrap
+      # dispatch for its first publish: OIDC cannot create a name.
+      - name: Publish
+        working-directory: packages/pixeldelta
+        run: |
+          if [ "${{ inputs.bootstrap }}" = "true" ]; then
+            npm config set provenance true
+          fi
+          pnpm exec napi prepublish -t npm --no-gh-release
+          npm publish ./npm/wasm --access public
+          npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ inputs.bootstrap && secrets.NPM_TOKEN || '' }}

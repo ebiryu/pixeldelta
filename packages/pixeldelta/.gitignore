@@ -1,0 +1,32 @@
+# Installed by pnpm.
+node_modules/
+
+# Compiled binaries. These are per-platform and are built in CI for each
+# target, so they are never committed. The JS glue beside them (index.d.ts and
+# the wasi loaders) is generated from the crate's API, is the same on every
+# host, and is committed so a fresh checkout can load and publish without
+# building first.
+*.node
+*.wasm
+
+# The loader napi-rs generates. load.js is published in its place, for the
+# reasons that file gives, so this one is only what `napi build` happens to
+# leave behind: nothing reads it and nothing ships it.
+index.js
+
+# Binaries gathered from the build jobs during a release.
+artifacts/
+
+# The command-line executable, built for one target at a time. `pnpm run
+# build:cli` places the host build into its platform package; the build jobs
+# leave the cross builds beside this file under their target's name.
+npm/*/pixeldelta
+npm/*/pixeldelta.exe
+pixeldelta-cli.*
+
+# npm/wasm holds copies: scripts/place-wasm.mjs fills it from the loaders
+# beside this file and the built .wasm, and only its own manifest and README
+# are written by hand.
+npm/wasm/*
+!npm/wasm/package.json
+!npm/wasm/README.md

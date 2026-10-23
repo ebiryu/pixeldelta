@@ -1,0 +1,34 @@
+{
+  "name": "pixeldelta-wasm32-wasi",
+  "version": "0.2.8",
+  "type": "module",
+  "main": "pixeldelta.wasi.cjs",
+  "types": "pixeldelta.wasi.d.cts",
+  "browser": "pixeldelta.wasi-browser.js",
+  "files": [
+    "pixeldelta.wasm32-wasi.wasm",
+    "pixeldelta.wasi.cjs",
+    "pixeldelta.wasi.d.cts",
+    "pixeldelta.wasi-browser.js",
+    "wasi-worker.mjs",
+    "wasi-worker-browser.mjs"
+  ],
+  "description": "Fast image comparison engine with difference clustering",
+  "license": "MIT",
+  "engines": {
+    "node": ">= 16"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ebiryu/pixeldelta.git",
+    "directory": "packages/pixeldelta"
+  },
+  "dependencies": {
+    "@napi-rs/wasm-runtime": "^1.1.6",
+    "@emnapi/core": "2.0.0-beta.2",
+    "@emnapi/runtime": "2.0.0-beta.2"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

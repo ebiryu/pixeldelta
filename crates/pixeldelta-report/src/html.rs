@@ -1,0 +1,529 @@
+use std::fmt::Write;
+
+use crate::{Category, Cluster, Entry, Report, Side};
+
+/// Renders the report as an HTML page.
+///
+/// The styles and behavior are inlined, but the images are not: `src` is
+/// asked for the URL to put in an `<img>` tag for each of an entry's images,
+/// and answers `None` when the entry has no image on that side. This lets a
+/// caller choose between a self-contained directory of files and a report
+/// that points at images already held elsewhere.
+pub fn html(report: &Report, src: impl Fn(&Entry, Side) -> Option<String>) -> String {
+    let src: &dyn Fn(&Entry, Side) -> Option<String> = &src;
+    let summary = report.summary();
+    let mut ordered: Vec<&Entry> = report.entries.iter().collect();
+    // Changed first, then the other differences, matched last; within a
+    // category the largest difference leads.
+    ordered.sort_by(|a, b| {
+        rank(a.category)
+            .cmp(&rank(b.category))
+            .then(b.diff_ratio.total_cmp(&a.diff_ratio))
+    });
+
+    let mut out = String::new();
+    out.push_str("<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n");
+    out.push_str("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n");
+    out.push_str("<title>pixeldelta report</title>\n<style>\n");
+    out.push_str(STYLE);
+    out.push_str("\n</style>\n</head>\n<body>\n");
+
+    write!(
+        out,
+        concat!(
+            "<header class=\"app-header\"><div class=\"wrap\">",
+            "<div class=\"brandrow\"><div class=\"mark\">\u{0394}</div>",
+            "<div><h1>pixeldelta report</h1><div class=\"sub\">expected/ \u{27f7} actual/</div></div>",
+            "<span class=\"verdict-pill\"><span class=\"dot\"></span> {verdict}</span></div>",
+        ),
+        verdict = if summary.passed { "PASS" } else { "FAIL" },
+    )
+    .unwrap();
+
+    out.push_str("<div class=\"summary\" id=\"summary\">");
+    chip(&mut out, "changed", "c-changed", summary.changed, true);
+    chip(&mut out, "added", "c-added", summary.added, true);
+    chip(&mut out, "removed", "c-removed", summary.removed, true);
+    chip(&mut out, "size", "c-size", summary.size_mismatch, true);
+    chip(
+        &mut out,
+        "tolerated",
+        "c-tolerated",
+        summary.tolerated,
+        true,
+    );
+    chip(&mut out, "matched", "c-matched", summary.matched, false);
+    out.push_str("</div>");
+
+    write!(
+        out,
+        concat!(
+            "<div class=\"params\">",
+            "<span><b>threshold</b> {threshold:.2}</span>",
+            "<span><b>tolerance</b> {tolerance}</span>",
+            "<span><b>antialiasing</b> {aa}</span>",
+            "<span><b>layout-shift</b> {shift}</span>",
+            "</div></div></header>\n",
+        ),
+        threshold = report.threshold,
+        tolerance = report.tolerance_ratio,
+        aa = on_off(report.antialiasing),
+        shift = on_off(report.layout_shift),
+    )
+    .unwrap();
+
+    out.push_str("<main class=\"wrap\"><div class=\"entries\" id=\"entries\">\n");
+    for (index, entry) in ordered.iter().enumerate() {
+        // The leading entry opens so the viewer is visible without a click.
+        write_entry(&mut out, entry, index == 0, src);
+    }
+    out.push_str("</div></main>\n");
+
+    out.push_str("<button id=\"theme\">theme</button>\n<script>\n");
+    out.push_str(SCRIPT);
+    out.push_str("\n</script>\n</body>\n</html>\n");
+    out
+}
+
+/// Sort rank placing changed first and matched last.
+fn rank(category: Category) -> u8 {
+    match category {
+        Category::Changed => 0,
+        Category::SizeMismatch => 1,
+        Category::Added => 2,
+        Category::Removed => 3,
+        Category::Tolerated => 4,
+        Category::Matched => 5,
+    }
+}
+
+fn on_off(flag: bool) -> &'static str {
+    if flag {
+        "on"
+    } else {
+        "off"
+    }
+}
+
+fn chip(out: &mut String, cat: &str, class: &str, count: u32, pressed: bool) {
+    write!(
+        out,
+        "<button class=\"chip {class}\" aria-pressed=\"{pressed}\" data-cat=\"{cat}\">\
+         <span class=\"swatch\"></span><span class=\"n\">{count}</span> {label}</button>",
+        pressed = pressed,
+        label = cat.replace("size", "size mismatch"),
+    )
+    .unwrap();
+}
+
+fn write_entry(
+    out: &mut String,
+    entry: &Entry,
+    open: bool,
+    src: &dyn Fn(&Entry, Side) -> Option<String>,
+) {
+    let cat = data_cat(entry.category);
+    write!(
+        out,
+        "<article class=\"entry {cls}{open}\" data-cat=\"{cat}\"><div class=\"entry-head\">\
+         <span class=\"stripe\"></span><span class=\"path\">{path}</span>\
+         <span class=\"badge {cls}\">{badge}</span><div class=\"metrics\">",
+        cls = data_cat(entry.category),
+        open = if open { " open" } else { "" },
+        path = path_html(&entry.path),
+        badge = badge_label(entry.category),
+    )
+    .unwrap();
+    write_metrics(out, entry);
+    out.push_str("</div>");
+    out.push_str(CHEVRON);
+    out.push_str("</div><div class=\"body\">");
+    write_body(out, entry, src);
+    out.push_str("</div></article>\n");
+}
+
+fn write_metrics(out: &mut String, entry: &Entry) {
+    match entry.category {
+        Category::Changed | Category::Tolerated => {
+            metric(out, &group(entry.diff_pixels), "diff px");
+            metric(out, &format!("{:.2}%", entry.diff_ratio * 100.0), "ratio");
+            let total = entry.clusters.len() as u64 + entry.omitted_clusters as u64;
+            metric(out, &group(total), "clusters");
+        }
+        Category::SizeMismatch => {
+            metric(out, &size_text(entry.expected_size), "expected");
+            metric(out, &size_text(entry.actual_size), "actual");
+        }
+        Category::Added => metric(out, "only in actual/", "source"),
+        Category::Removed => metric(out, "only in expected/", "source"),
+        Category::Matched => metric(out, "0", "diff px"),
+    }
+}
+
+fn metric(out: &mut String, value: &str, key: &str) {
+    write!(
+        out,
+        "<div class=\"metric\"><div class=\"v\">{}</div><div class=\"k\">{}</div></div>",
+        escape(value),
+        key,
+    )
+    .unwrap();
+}
+
+fn write_body(out: &mut String, entry: &Entry, src: &dyn Fn(&Entry, Side) -> Option<String>) {
+    match entry.category {
+        Category::Changed => write_changed_body(out, entry, src),
+        Category::Tolerated => {
+            write_changed_body(out, entry, src);
+            out.push_str(
+                "<p class=\"inline-note\">Within the allowed difference ratio, so it does not fail the run.</p>",
+            );
+        }
+        Category::SizeMismatch => {
+            out.push_str("<div class=\"grid3\" style=\"grid-template-columns:1fr 1fr\">");
+            pane(out, "expected", src(entry, Side::Expected));
+            pane(out, "actual", src(entry, Side::Actual));
+            out.push_str(
+                "</div><p class=\"inline-note\">Dimensions differ, so no diff was computed.</p>",
+            );
+        }
+        Category::Added => single(out, "actual", src(entry, Side::Actual)),
+        Category::Removed => single(out, "expected", src(entry, Side::Expected)),
+        Category::Matched => {
+            single(out, "expected = actual", src(entry, Side::Expected));
+            out.push_str(
+                "<p class=\"inline-note\">Identical within the threshold, so expected and actual are the same image.</p>",
+            );
+        }
+    }
+}
+
+fn write_changed_body(
+    out: &mut String,
+    entry: &Entry,
+    src: &dyn Fn(&Entry, Side) -> Option<String>,
+) {
+    out.push_str(
+        "<div class=\"viewer-bar\"><div class=\"seg\" role=\"tablist\">\
+         <button aria-pressed=\"true\" data-mode=\"diff\">Diff</button>\
+         <button aria-pressed=\"false\" data-mode=\"side\">Side by side</button>\
+         <button aria-pressed=\"false\" data-mode=\"slider\">Slider</button>\
+         <button aria-pressed=\"false\" data-mode=\"onion\">Onion</button></div>\
+         <div class=\"seg\" role=\"tablist\">\
+         <button aria-pressed=\"true\" data-zoom=\"fit\">fit</button>\
+         <button aria-pressed=\"false\" data-zoom=\"1\">1:1</button>\
+         <button aria-pressed=\"false\" data-zoom=\"2\">2x</button>\
+         <button aria-pressed=\"false\" data-zoom=\"4\">4x</button></div>\
+         <div class=\"onion-ctl\">expected<input type=\"range\" min=\"0\" max=\"100\" value=\"50\" class=\"op-range\">actual</div></div>",
+    );
+
+    write!(
+        out,
+        "<div class=\"stage\" data-mode=\"diff\" data-zoom=\"fit\"{}>",
+        stage_cap(entry)
+    )
+    .unwrap();
+    out.push_str(
+        "<div class=\"pane-wrap m-diff\"><span class=\"cap\">diff</span>\
+         <div class=\"pane\"><div class=\"frame\">",
+    );
+    img(out, src(entry, Side::Diff).as_deref(), "diff");
+    write_cluster_rects(out, entry);
+    out.push_str("</div></div></div><div class=\"grid3 m-side\">");
+    pane(out, "expected", src(entry, Side::Expected));
+    pane(out, "actual", src(entry, Side::Actual));
+    // The overlay puts expected under actual and reveals actual from the
+    // right, so its caption names the side each edge of the frame is showing,
+    // the same way round as the panes above. Blended, neither edge is one
+    // side alone, so the onion mode gets a caption of its own.
+    out.push_str(
+        "</div><div class=\"pane-wrap m-overlay\">\
+         <span class=\"cap cap-split\"><span>expected</span><span>actual</span></span>\
+         <span class=\"cap cap-blend\">expected + actual</span>\
+         <div class=\"pane stack\"><div class=\"frame\"><div class=\"base\">",
+    );
+    img(out, src(entry, Side::Expected).as_deref(), "expected");
+    out.push_str("</div><div class=\"layer top\">");
+    img(out, src(entry, Side::Actual).as_deref(), "actual");
+    out.push_str("</div><div class=\"handle\"></div></div></div></div></div>");
+
+    write_clusters(out, entry);
+}
+
+/// Widths the viewer is sized by, written as a `style` attribute.
+///
+/// `--cap` limits how wide the pane grows at the `fit` zoom level. At `fit`
+/// the frame fills the pane, so a tall screenshot would push the rest of the
+/// entry off the screen. Limiting the height instead would letterbox the
+/// image inside the frame and move it away from the cluster rectangles, which
+/// are placed as percentages of the frame. Expressing the height limit as a
+/// width through the aspect ratio keeps the frame and the image the same box.
+///
+/// `--iw` holds the image's natural width, which the zoom levels other than
+/// `fit` scale the frame to.
+fn stage_cap(entry: &Entry) -> String {
+    match entry.image_size {
+        Some([w, h]) if h != 0 => format!(" style=\"--cap:calc(52vh * {w} / {h});--iw:{w}px\""),
+        _ => String::new(),
+    }
+}
+
+fn write_cluster_rects(out: &mut String, entry: &Entry) {
+    let Some([w, h]) = entry.image_size else {
+        return;
+    };
+    let (w, h) = (w as f64, h as f64);
+    for c in &entry.clusters {
+        write!(
+            out,
+            "<div class=\"cluster-rect\" style=\"left:{:.3}%;top:{:.3}%;width:{:.3}%;height:{:.3}%\"></div>",
+            c.x as f64 / w * 100.0,
+            c.y as f64 / h * 100.0,
+            c.width as f64 / w * 100.0,
+            c.height as f64 / h * 100.0,
+        )
+        .unwrap();
+    }
+}
+
+fn write_clusters(out: &mut String, entry: &Entry) {
+    if entry.clusters.is_empty() {
+        return;
+    }
+    out.push_str(
+        "<div class=\"clusters\"><h3>Clusters</h3><table><thead><tr>\
+         <th>#</th><th>Bounds</th><th>Diff px</th><th>Classification</th><th>SSIM</th>\
+         </tr></thead><tbody>",
+    );
+    for (i, c) in entry.clusters.iter().enumerate() {
+        let (label, tag) = classify(c);
+        write!(
+            out,
+            "<tr><td>{n}</td><td>x{x} y{y} \u{b7} {w}\u{d7}{h}</td><td>{px}</td>\
+             <td><span class=\"tag {tag}\">{label}</span></td><td>{ssim}</td></tr>",
+            n = i + 1,
+            x = c.x,
+            y = c.y,
+            w = c.width,
+            h = c.height,
+            px = group(c.diff_pixels),
+            tag = tag,
+            label = label,
+            ssim = ssim_cell(c.ssim),
+        )
+        .unwrap();
+    }
+    out.push_str("</tbody></table>");
+    if entry.omitted_clusters > 0 {
+        write!(
+            out,
+            "<p class=\"inline-note\">The {n} clusters with the most differing pixels are listed; {m} more are not.</p>",
+            n = group(entry.clusters.len() as u64),
+            m = group(entry.omitted_clusters as u64),
+        )
+        .unwrap();
+    }
+    out.push_str("</div>");
+}
+
+/// Labels a cluster as a move or a content change from its displacement.
+fn classify(c: &Cluster) -> (String, &'static str) {
+    match c.displacement {
+        Some([dx, dy]) if (dx, dy) != (0, 0) => (moved_label(dx, dy), "moved"),
+        _ => ("color change".to_owned(), "color"),
+    }
+}
+
+fn moved_label(dx: i32, dy: i32) -> String {
+    if dx == 0 {
+        format!(
+            "moved {}px {}",
+            dy.abs(),
+            if dy > 0 { "down" } else { "up" }
+        )
+    } else if dy == 0 {
+        format!(
+            "moved {}px {}",
+            dx.abs(),
+            if dx > 0 { "right" } else { "left" }
+        )
+    } else {
+        format!("moved {dx},{dy}px")
+    }
+}
+
+fn ssim_cell(ssim: Option<f64>) -> String {
+    match ssim {
+        None => "\u{2014}".to_owned(),
+        Some(value) => {
+            let pct = (value.clamp(0.0, 1.0) * 100.0).round();
+            let color = if value >= 0.7 {
+                "var(--matched)"
+            } else {
+                "var(--changed)"
+            };
+            format!(
+                "<span class=\"ssim-bar\"><span class=\"track\">\
+                 <span class=\"fill\" style=\"width:{pct}%;background:{color}\"></span></span>{value:.3}</span>",
+            )
+        }
+    }
+}
+
+fn single(out: &mut String, cap: &str, url: Option<String>) {
+    out.push_str("<div class=\"single\">");
+    pane(out, cap, url);
+    out.push_str("</div>");
+}
+
+/// Writes one captioned image box.
+///
+/// The caption is a sibling of the pane rather than a child, so it is laid
+/// out above the image instead of over its top-left corner.
+fn pane(out: &mut String, cap: &str, url: Option<String>) {
+    write!(
+        out,
+        "<div class=\"pane-wrap\"><span class=\"cap\">{}</span>\
+         <div class=\"pane\"><div class=\"frame\">",
+        escape(cap)
+    )
+    .unwrap();
+    img(out, url.as_deref(), cap);
+    out.push_str("</div></div></div>");
+}
+
+/// Writes one image tag.
+///
+/// The URL is escaped as well as the alt text: it comes from the caller's
+/// `src` callback, which is not bound to answer with something that already
+/// escapes the attribute metacharacters.
+fn img(out: &mut String, url: Option<&str>, alt: &str) {
+    if let Some(url) = url {
+        write!(
+            out,
+            "<img src=\"{}\" alt=\"{}\" loading=\"lazy\">",
+            escape(url),
+            escape(alt),
+        )
+        .unwrap();
+    }
+}
+
+fn data_cat(category: Category) -> &'static str {
+    match category {
+        Category::Changed => "changed",
+        Category::SizeMismatch => "size",
+        Category::Added => "added",
+        Category::Removed => "removed",
+        Category::Tolerated => "tolerated",
+        Category::Matched => "matched",
+    }
+}
+
+fn badge_label(category: Category) -> &'static str {
+    match category {
+        Category::Changed => "changed",
+        Category::SizeMismatch => "size mismatch",
+        Category::Added => "added",
+        Category::Removed => "removed",
+        Category::Tolerated => "tolerated",
+        Category::Matched => "matched",
+    }
+}
+
+fn size_text(size: Option<[u32; 2]>) -> String {
+    match size {
+        Some([w, h]) => format!("{w}\u{d7}{h}"),
+        None => "\u{2014}".to_owned(),
+    }
+}
+
+/// Splits a path into a dimmed directory prefix and the file name.
+fn path_html(path: &str) -> String {
+    match path.rfind('/') {
+        Some(slash) => format!(
+            "<span class=\"dir\">{}</span>{}",
+            escape(&path[..=slash]),
+            escape(&path[slash + 1..]),
+        ),
+        None => escape(path),
+    }
+}
+
+/// Groups an integer into thousands with commas.
+fn group(n: u64) -> String {
+    let digits = n.to_string();
+    let mut out = String::with_capacity(digits.len() + digits.len() / 3);
+    let first = digits.len() % 3;
+    for (i, ch) in digits.chars().enumerate() {
+        if i != 0 && i >= first && (i - first).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(ch);
+    }
+    out
+}
+
+/// Escapes the HTML text and attribute metacharacters.
+fn escape(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for ch in text.chars() {
+        match ch {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&#39;"),
+            _ => out.push(ch),
+        }
+    }
+    out
+}
+
+/// Filesystem path of one image below the report directory.
+///
+/// `path` is the entry's relative path, already ending in `.png`. Not
+/// percent-encoded: callers writing the file to disk want the raw path.
+pub fn asset_path(path: &str, side: Side) -> String {
+    let dir = match side {
+        Side::Expected => "expected",
+        Side::Actual => "actual",
+        Side::Diff => "diff",
+    };
+    format!("images/{dir}/{path}")
+}
+
+/// Percent-encodes a relative path for use in an HTML attribute.
+///
+/// Every byte outside `A-Za-z0-9-._~` and `/` becomes `%XX`, uppercase hex,
+/// taken from the UTF-8 encoding one byte at a time. Screenshot names come
+/// from whatever the caller named the file, and can hold spaces and
+/// non-ASCII characters.
+pub fn url_path(path: &str) -> String {
+    let mut out = String::with_capacity(path.len());
+    for byte in path.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' | b'/' => {
+                out.push(byte as char);
+            }
+            _ => write!(out, "%{byte:02X}").unwrap(),
+        }
+    }
+    out
+}
+
+/// Resolves images for a report whose files sit below its own directory, at
+/// the paths [`asset_path`] describes.
+pub fn local_assets(entry: &Entry, side: Side) -> Option<String> {
+    let held = match side {
+        Side::Expected => entry.images.expected,
+        Side::Actual => entry.images.actual,
+        Side::Diff => entry.images.diff,
+    };
+    held.then(|| url_path(&asset_path(&entry.path, side)))
+}
+
+const CHEVRON: &str = "<svg class=\"chev\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\" fill=\"none\"><path d=\"M6 4l4 4-4 4\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg>";
+
+const STYLE: &str = include_str!("report.css");
+const SCRIPT: &str = include_str!("report.js");

@@ -1,0 +1,26 @@
+[package]
+name = "pixeldelta-core"
+description = "Image comparison engine for pixeldelta"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+# Distributes the row blocks of a scan over a work-stealing thread pool.
+rayon = "1.11"
+
+[dev-dependencies]
+# Decodes the compatibility fixtures. The library itself performs no I/O.
+png = "0.18"
+# Generates the images the invariants in tests/properties.rs are checked on.
+proptest = "1.11.0"
+# Runs the benchmarks in benches/ and keeps the previous measurement to
+# compare against.
+criterion = "0.8"
+
+[[bench]]
+name = "compare"
+harness = false

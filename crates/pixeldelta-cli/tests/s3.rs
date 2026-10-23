@@ -1,0 +1,387 @@
+//! The S3-compatible backend, driven against a local stub.
+
+mod stub;
+
+use std::collections::BTreeSet;
+use std::path::Path;
+
+use pixeldelta_cli::{Credentials, S3Config, Storage};
+use stub::{Reply, Stub};
+
+fn config(endpoint: &str) -> S3Config {
+    S3Config {
+        bucket: "shots".into(),
+        prefix: "pixeldelta".into(),
+        region: "us-east-1".into(),
+        endpoint: Some(endpoint.to_owned()),
+        credentials: Credentials {
+            key_id: "AKIDEXAMPLE".into(),
+            secret: "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY".into(),
+            session_token: None,
+        },
+    }
+}
+
+#[test]
+fn a_stored_key_is_a_head_on_its_manifest() {
+    let stub = Stub::start(vec![Reply::status(200)]);
+    let storage = Storage::s3(config(&stub.url()));
+
+    let exists = storage.exists("abc123").expect("the check succeeds");
+
+    assert!(exists);
+    let requests = stub.requests();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].method, "HEAD");
+    assert_eq!(requests[0].target, "/shots/pixeldelta/abc123/manifest.json");
+}
+
+#[test]
+fn a_missing_manifest_is_not_an_error() {
+    let stub = Stub::start(vec![Reply::status(404)]);
+    let storage = Storage::s3(config(&stub.url()));
+
+    let exists = storage
+        .exists("abc123")
+        .expect("a 404 is an answer, not a failure");
+
+    assert!(!exists);
+}
+
+#[test]
+fn every_request_carries_a_signature() {
+    let stub = Stub::start(vec![Reply::status(200)]);
+    let storage = Storage::s3(config(&stub.url()));
+
+    storage.exists("abc123").expect("the check succeeds");
+
+    let request = stub.requests().remove(0);
+    let authorization = request
+        .header("authorization")
+        .expect("the request is signed");
+    assert!(
+        authorization.starts_with("AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/"),
+        "{authorization}"
+    );
+    assert!(
+        authorization.contains("SignedHeaders=host;x-amz-content-sha256;x-amz-date"),
+        "{authorization}"
+    );
+    assert!(request.header("x-amz-date").is_some());
+    assert!(request.header("x-amz-content-sha256").is_some());
+}
+
+/// `store` sends the two image PUTs concurrently, so their relative order is
+/// not fixed. What must hold is that both land before the manifest: the
+/// manifest PUT is the last request the stub receives, and the set of image
+/// PUTs before it is exactly the expected set.
+#[test]
+fn storing_a_snapshot_puts_the_images_before_the_manifest() {
+    let dir = tempfile::tempdir().expect("a temporary directory");
+    std::fs::write(dir.path().join("a.png"), b"a").expect("the file is written");
+    std::fs::create_dir_all(dir.path().join("nested")).expect("the directory is created");
+    std::fs::write(dir.path().join("nested/b.png"), b"b").expect("the file is written");
+    let stub = Stub::start_by_path(vec![
+        ("/shots/pixeldelta/abc123/images/a.png", Reply::status(200)),
+        (
+            "/shots/pixeldelta/abc123/images/nested/b.png",
+            Reply::status(200),
+        ),
+        ("/shots/pixeldelta/abc123/manifest.json", Reply::status(200)),
+    ]);
+    let storage = Storage::s3(config(&stub.url()));
+
+    storage
+        .store("abc123", dir.path())
+        .expect("the snapshot is stored");
+
+    let requests = stub.requests();
+    assert!(requests.iter().all(|r| r.method == "PUT"));
+    assert_eq!(
+        requests.last().map(|r| r.target.as_str()),
+        Some("/shots/pixeldelta/abc123/manifest.json"),
+        "the manifest is the last request received"
+    );
+    let image_targets: BTreeSet<&str> = requests[..requests.len() - 1]
+        .iter()
+        .map(|r| r.target.as_str())
+        .collect();
+    assert_eq!(
+        image_targets,
+        BTreeSet::from([
+            "/shots/pixeldelta/abc123/images/a.png",
+            "/shots/pixeldelta/abc123/images/nested/b.png",
+        ])
+    );
+    let a = requests
+        .iter()
+        .find(|r| r.target == "/shots/pixeldelta/abc123/images/a.png")
+        .expect("a.png was requested");
+    assert_eq!(a.body, b"a");
+    let b = requests
+        .iter()
+        .find(|r| r.target == "/shots/pixeldelta/abc123/images/nested/b.png")
+        .expect("nested/b.png was requested");
+    assert_eq!(b.body, b"b");
+}
+
+/// `fetch` reads the manifest first, then sends the two image GETs
+/// concurrently, so their relative order is not fixed. What must hold is that
+/// the manifest is read before either image: it is the first request the
+/// stub receives, and the set of image GETs after it is exactly the expected
+/// set.
+#[test]
+fn fetching_reads_the_manifest_and_then_the_images() {
+    let dest = tempfile::tempdir().expect("a temporary directory");
+    let stub = Stub::start_by_path(vec![
+        (
+            "/shots/pixeldelta/abc123/manifest.json",
+            Reply::ok(br#"{"version":1,"files":["a.png","nested/b.png"]}"#),
+        ),
+        ("/shots/pixeldelta/abc123/images/a.png", Reply::ok(b"a")),
+        (
+            "/shots/pixeldelta/abc123/images/nested/b.png",
+            Reply::ok(b"b"),
+        ),
+    ]);
+    let storage = Storage::s3(config(&stub.url()));
+
+    let files = storage
+        .fetch("abc123", dest.path())
+        .expect("the snapshot is fetched");
+
+    assert_eq!(files, vec!["a.png".to_owned(), "nested/b.png".to_owned()]);
+    assert_eq!(read(&dest.path().join("a.png")), b"a");
+    assert_eq!(read(&dest.path().join("nested/b.png")), b"b");
+    let requests = stub.requests();
+    assert!(requests.iter().all(|r| r.method == "GET"));
+    assert_eq!(
+        requests.first().map(|r| r.target.as_str()),
+        Some("/shots/pixeldelta/abc123/manifest.json"),
+        "the manifest is the first request received"
+    );
+    let image_targets: BTreeSet<&str> = requests[1..].iter().map(|r| r.target.as_str()).collect();
+    assert_eq!(
+        image_targets,
+        BTreeSet::from([
+            "/shots/pixeldelta/abc123/images/a.png",
+            "/shots/pixeldelta/abc123/images/nested/b.png",
+        ])
+    );
+}
+
+#[test]
+fn a_stored_report_answers_with_its_url() {
+    let stub = Stub::start(vec![Reply::status(200)]);
+    let storage = Storage::s3(config(&stub.url()));
+
+    let url = storage
+        .store_report("abc123", b"<html></html>", &[])
+        .expect("the report is stored");
+
+    assert_eq!(
+        url,
+        Some(format!(
+            "{}/shots/pixeldelta/abc123/report/index.html",
+            stub.url()
+        ))
+    );
+}
+
+/// Without a type the service stores the object as binary, and the browser
+/// downloads the report instead of showing it.
+#[test]
+fn a_put_carries_the_type_of_what_it_stores() {
+    let dir = tempfile::tempdir().expect("a temporary directory");
+    std::fs::write(dir.path().join("a.png"), b"a").expect("the file is written");
+    let stub = Stub::start(vec![
+        Reply::status(200),
+        Reply::status(200),
+        Reply::status(200),
+    ]);
+    let storage = Storage::s3(config(&stub.url()));
+
+    storage
+        .store("abc123", dir.path())
+        .expect("the snapshot is stored");
+    storage
+        .store_report("abc123", b"<html></html>", &[])
+        .expect("the report is stored");
+
+    let requests = stub.requests();
+    let types: Vec<Option<&str>> = requests.iter().map(|r| r.header("content-type")).collect();
+    assert_eq!(
+        types,
+        vec![
+            Some("image/png"),
+            Some("application/json"),
+            Some("text/html; charset=utf-8"),
+        ]
+    );
+}
+
+/// Screenshot names come from whatever the caller named the file. A name
+/// outside the unreserved set has to reach the request line percent-encoded:
+/// `http::Uri` rejects a non-ASCII byte, and a `+` sent as it is would
+/// differ from the `%2B` the signature covers.
+/// The two image PUTs race, so only the set before the manifest, not their
+/// order, is asserted.
+#[test]
+fn a_name_outside_the_unreserved_set_is_encoded_in_the_request_line() {
+    let dir = tempfile::tempdir().expect("a temporary directory");
+    std::fs::write(dir.path().join("トップ.png"), b"a").expect("the file is written");
+    std::fs::write(dir.path().join("a+b.png"), b"b").expect("the file is written");
+    let stub = Stub::start_by_path(vec![
+        (
+            "/shots/pixeldelta/abc123/images/a%2Bb.png",
+            Reply::status(200),
+        ),
+        (
+            "/shots/pixeldelta/abc123/images/%E3%83%88%E3%83%83%E3%83%97.png",
+            Reply::status(200),
+        ),
+        ("/shots/pixeldelta/abc123/manifest.json", Reply::status(200)),
+    ]);
+    let storage = Storage::s3(config(&stub.url()));
+
+    storage
+        .store("abc123", dir.path())
+        .expect("the snapshot is stored");
+
+    let requests = stub.requests();
+    assert_eq!(
+        requests.last().map(|r| r.target.as_str()),
+        Some("/shots/pixeldelta/abc123/manifest.json"),
+        "the manifest is the last request received"
+    );
+    let image_targets: BTreeSet<&str> = requests[..requests.len() - 1]
+        .iter()
+        .map(|r| r.target.as_str())
+        .collect();
+    assert_eq!(
+        image_targets,
+        BTreeSet::from([
+            "/shots/pixeldelta/abc123/images/a%2Bb.png",
+            "/shots/pixeldelta/abc123/images/%E3%83%88%E3%83%83%E3%83%97.png",
+        ])
+    );
+    assert!(requests.iter().all(|r| r.header("authorization").is_some()));
+}
+
+/// The URL answered for a report is the one its objects were written to.
+#[test]
+fn a_stored_report_answers_with_an_encoded_url() {
+    let dir = tempfile::tempdir().expect("a temporary directory");
+    let image_path = dir.path().join("top.png");
+    std::fs::write(&image_path, b"a").expect("the file is written");
+    let stub = Stub::start(vec![Reply::status(200), Reply::status(200)]);
+    let storage = Storage::s3(config(&stub.url()));
+
+    let url = storage
+        .store_report(
+            "abc123",
+            b"<html></html>",
+            &[("トップ.png".to_owned(), image_path)],
+        )
+        .expect("the report is stored");
+
+    assert_eq!(
+        stub.requests()[0].target,
+        "/shots/pixeldelta/abc123/report/%E3%83%88%E3%83%83%E3%83%97.png"
+    );
+    assert_eq!(
+        url,
+        Some(format!(
+            "{}/shots/pixeldelta/abc123/report/index.html",
+            stub.url()
+        ))
+    );
+}
+
+/// A single 5xx is a transient answer, not a request to give up on.
+#[test]
+fn a_5xx_is_retried_until_the_service_answers() {
+    let stub = Stub::start(vec![Reply::status(500), Reply::status(200)]);
+    let storage = Storage::s3(config(&stub.url()));
+
+    let exists = storage.exists("abc123").expect("the retry reaches the 200");
+
+    assert!(exists);
+    assert_eq!(stub.requests().len(), 2);
+}
+
+/// Three 5xx answers exhaust the retries, and no fourth request is sent.
+#[test]
+fn three_5xx_answers_exhaust_the_retries() {
+    let stub = Stub::start(vec![
+        Reply::status(500),
+        Reply::status(500),
+        Reply::status(500),
+    ]);
+    let storage = Storage::s3(config(&stub.url()));
+
+    let error = storage
+        .exists("abc123")
+        .expect_err("the last 5xx is returned as an error");
+
+    assert!(error.to_string().contains("500"), "{error}");
+    assert_eq!(stub.requests().len(), 3);
+}
+
+/// A connection closed without a response looks like any other transport
+/// failure, and is retried the same way.
+#[test]
+fn a_dropped_connection_is_retried() {
+    let stub = Stub::start(vec![Reply::dropped(), Reply::status(200)]);
+    let storage = Storage::s3(config(&stub.url()));
+
+    let exists = storage.exists("abc123").expect("the retry reaches the 200");
+
+    assert!(exists);
+    assert_eq!(stub.requests().len(), 2);
+}
+
+/// A 4xx is an answer about the request itself, not a transient failure, so
+/// sending it again would not change it.
+#[test]
+fn a_4xx_is_not_retried() {
+    let stub = Stub::start(vec![Reply::status(403)]);
+    let storage = Storage::s3(config(&stub.url()));
+
+    let error = storage
+        .exists("abc123")
+        .expect_err("a 403 is not a stored-or-not answer");
+
+    assert!(error.to_string().contains("403"), "{error}");
+    assert_eq!(stub.requests().len(), 1);
+}
+
+#[test]
+fn a_refused_request_is_an_error() {
+    let stub = Stub::start(vec![Reply::status(403)]);
+    let storage = Storage::s3(config(&stub.url()));
+
+    let error = storage
+        .fetch("abc123", Path::new("unused"))
+        .expect_err("the storage refused");
+
+    assert!(error.to_string().contains("403"), "{error}");
+}
+
+/// Without an endpoint the request goes to the bucket's own host, which is the
+/// form AWS accepts for buckets made after path style was withdrawn.
+#[test]
+fn without_an_endpoint_the_bucket_is_the_host() {
+    let mut config = config("unused");
+    config.endpoint = None;
+    let storage = Storage::s3(config);
+
+    assert_eq!(
+        storage.object_url("abc123/manifest.json"),
+        Some("https://shots.s3.us-east-1.amazonaws.com/pixeldelta/abc123/manifest.json".to_owned())
+    );
+}
+
+fn read(path: &Path) -> Vec<u8> {
+    std::fs::read(path).unwrap_or_else(|error| panic!("{} is readable: {error}", path.display()))
+}

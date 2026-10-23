@@ -1,0 +1,26 @@
+[package]
+name = "pixeldelta-fuzz"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+# Provides the libFuzzer entry point and the `fuzz_target!` macro. It builds
+# only on nightly, which is why this package is a workspace of its own.
+libfuzzer-sys = "0.4"
+pixeldelta-io = { path = "../crates/pixeldelta-io" }
+
+[[bin]]
+name = "decode"
+path = "fuzz_targets/decode.rs"
+test = false
+doc = false
+bench = false
+
+# Keeps this package out of the workspace at the repository root, so `cargo
+# check`, `cargo test` and the MSRV build there never reach for nightly.
+[workspace]
+members = ["."]

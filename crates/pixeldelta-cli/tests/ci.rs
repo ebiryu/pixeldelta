@@ -1,0 +1,353 @@
+//! The `ci` operation: resolve, fetch, compare, store.
+
+mod stub;
+
+use std::path::Path;
+use std::process::Command;
+
+use pixeldelta_cli::{ci, load_config, CiOptions, Config, GithubConfig, Notification, Storage};
+
+#[test]
+fn the_first_run_stores_a_snapshot_and_has_nothing_to_compare() {
+    let dir = tempfile::tempdir().expect("a temporary directory");
+    let repo = dir.path().join("repo");
+    init(&repo);
+    let head = commit(&repo, "first");
+    let actual = dir.path().join("actual");
+    write_png(&actual.join("a.png"), 8, 8, [0, 128, 0, 255]);
+    let storage = storage(dir.path());
+    let config = default_config();
+
+    let run = ci(&options(&repo, &actual, &storage, &config)).expect("the run finishes");
+
+    assert_eq!(run.head, head);
+    assert_eq!(run.baseline, None);
+    assert!(run.summary.is_none(), "there was nothing to compare");
+    assert!(
+        storage.exists(&head).expect("the check succeeds"),
+        "the snapshot is stored for the next run"
+    );
+}
+
+#[test]
+fn an_unchanged_screenshot_passes_against_the_stored_baseline() {
+    let dir = tempfile::tempdir().expect("a temporary directory");
+    let repo = dir.path().join("repo");
+    init(&repo);
+    let actual = dir.path().join("actual");
+    write_png(&actual.join("a.png"), 8, 8, [0, 128, 0, 255]);
+    let storage = storage(dir.path());
+    let config = default_config();
+
+    commit(&repo, "first");
+    ci(&options(&repo, &actual, &storage, &config)).expect("the first run finishes");
+    let head = commit(&repo, "second");
+    let run = ci(&options(&repo, &actual, &storage, &config)).expect("the second run finishes");
+
+    assert_eq!(run.head, head);
+    assert!(run.baseline.is_some());
+    let summary = run.summary.expect("the run compared against a baseline");
+    assert!(summary.passed);
+    assert_eq!(summary.matched, 1);
+}
+
+#[test]
+fn a_changed_screenshot_fails_against_the_stored_baseline() {
+    let dir = tempfile::tempdir().expect("a temporary directory");
+    let repo = dir.path().join("repo");
+    init(&repo);
+    let actual = dir.path().join("actual");
+    write_png(&actual.join("a.png"), 8, 8, [0, 128, 0, 255]);
+    let storage = storage(dir.path());
+    let config = default_config();
+
+    let first = commit(&repo, "first");
+    ci(&options(&repo, &actual, &storage, &config)).expect("the first run finishes");
+
+    write_png(&actual.join("a.png"), 8, 8, [255, 0, 0, 255]);
+    write_png(&actual.join("new.png"), 4, 4, [0, 0, 255, 255]);
+    commit(&repo, "second");
+    let run = ci(&options(&repo, &actual, &storage, &config)).expect("the second run finishes");
+
+    assert_eq!(run.baseline, Some(first));
+    let summary = run.summary.expect("the run compared against a baseline");
+    assert!(!summary.passed);
+    assert_eq!(summary.changed, 1);
+    assert_eq!(summary.added, 1);
+}
+
+#[test]
+fn the_report_is_written_and_stored_when_it_is_asked_for() {
+    let dir = tempfile::tempdir().expect("a temporary directory");
+    let repo = dir.path().join("repo");
+    init(&repo);
+    let actual = dir.path().join("actual");
+    write_png(&actual.join("a.png"), 8, 8, [0, 128, 0, 255]);
+    let storage = storage(dir.path());
+    let config = default_config();
+
+    commit(&repo, "first");
+    ci(&options(&repo, &actual, &storage, &config)).expect("the first run finishes");
+
+    write_png(&actual.join("a.png"), 8, 8, [255, 0, 0, 255]);
+    let head = commit(&repo, "second");
+    let report_dir = dir.path().join("report");
+    let json = dir.path().join("result.json");
+    let mut opts = options(&repo, &actual, &storage, &config);
+    opts.report = Some(&report_dir);
+    opts.json = Some(&json);
+    let run = ci(&opts).expect("the run finishes");
+
+    assert!(report_dir.join("index.html").is_file());
+    assert!(json.is_file());
+    assert_eq!(run.report_url, None, "a local directory has no public URL");
+    assert!(
+        storage_root(dir.path())
+            .join(&head)
+            .join("report/index.html")
+            .is_file(),
+        "the report is kept with the snapshot"
+    );
+}
+
+#[test]
+fn the_stored_report_points_expected_at_the_baseline_snapshot_and_skips_reupload() {
+    let dir = tempfile::tempdir().expect("a temporary directory");
+    let repo = dir.path().join("repo");
+    init(&repo);
+    let actual = dir.path().join("actual");
+    write_png(&actual.join("a.png"), 8, 8, [0, 128, 0, 255]);
+    let storage = storage(dir.path());
+    let config = default_config();
+
+    let first = commit(&repo, "first");
+    ci(&options(&repo, &actual, &storage, &config)).expect("the first run finishes");
+
+    write_png(&actual.join("a.png"), 8, 8, [255, 0, 0, 255]);
+    let head = commit(&repo, "second");
+    let report_dir = dir.path().join("report");
+    let mut opts = options(&repo, &actual, &storage, &config);
+    opts.report = Some(&report_dir);
+    ci(&opts).expect("the run finishes");
+
+    let stored_index = storage_root(dir.path())
+        .join(&head)
+        .join("report/index.html");
+    let html = std::fs::read_to_string(&stored_index).expect("the stored report is readable");
+    assert!(html.contains(&format!("../../{first}/images/")), "{html}");
+
+    assert!(
+        storage_root(dir.path())
+            .join(&head)
+            .join("report/images/diff/a.png")
+            .is_file(),
+        "the diff image is stored alongside the report"
+    );
+    assert!(
+        !storage_root(dir.path())
+            .join(&head)
+            .join("report/images/expected/a.png")
+            .exists(),
+        "expected is already in the baseline snapshot and is not re-uploaded"
+    );
+}
+
+#[test]
+fn without_a_report_flag_nothing_is_written() {
+    let dir = tempfile::tempdir().expect("a temporary directory");
+    let repo = dir.path().join("repo");
+    init(&repo);
+    let actual = dir.path().join("actual");
+    write_png(&actual.join("a.png"), 8, 8, [0, 128, 0, 255]);
+    let storage = storage(dir.path());
+    let config = default_config();
+
+    let head = commit(&repo, "first");
+    ci(&options(&repo, &actual, &storage, &config)).expect("the run finishes");
+
+    assert!(!storage_root(dir.path()).join(&head).join("report").exists());
+}
+
+/// The job summary file a workflow points at may already hold output from an
+/// earlier step, so the body is appended.
+#[test]
+fn the_notification_body_is_appended_to_the_markdown_file() {
+    let dir = tempfile::tempdir().expect("a temporary directory");
+    let repo = dir.path().join("repo");
+    init(&repo);
+    let actual = dir.path().join("actual");
+    write_png(&actual.join("a.png"), 8, 8, [0, 128, 0, 255]);
+    let storage = storage(dir.path());
+    let config = default_config();
+
+    let first = commit(&repo, "first");
+    ci(&options(&repo, &actual, &storage, &config)).expect("the first run finishes");
+
+    write_png(&actual.join("a.png"), 8, 8, [255, 0, 0, 255]);
+    commit(&repo, "second");
+    let markdown = dir.path().join("summary.md");
+    std::fs::write(&markdown, "written by an earlier step\n").expect("the file is written");
+    let mut opts = options(&repo, &actual, &storage, &config);
+    opts.markdown = Some(&markdown);
+    ci(&opts).expect("the run finishes");
+
+    let body = std::fs::read_to_string(&markdown).expect("the file is readable");
+    assert!(body.starts_with("written by an earlier step\n"), "{body}");
+    assert!(body.contains("<!-- pixeldelta -->"), "{body}");
+    assert!(body.contains(&first[..8]), "the baseline is named: {body}");
+    assert!(body.contains("| changed | 1 |"), "{body}");
+}
+
+/// A local directory serves no URL, so the only way a reader learns where the
+/// report is published is the value handed in from outside.
+#[test]
+fn the_notification_body_links_to_the_report() {
+    let dir = tempfile::tempdir().expect("a temporary directory");
+    let repo = dir.path().join("repo");
+    init(&repo);
+    let actual = dir.path().join("actual");
+    write_png(&actual.join("a.png"), 8, 8, [0, 128, 0, 255]);
+    let storage = storage(dir.path());
+    let config = default_config();
+
+    commit(&repo, "first");
+    ci(&options(&repo, &actual, &storage, &config)).expect("the first run finishes");
+
+    write_png(&actual.join("a.png"), 8, 8, [255, 0, 0, 255]);
+    commit(&repo, "second");
+    let report_dir = dir.path().join("report");
+    let markdown = dir.path().join("summary.md");
+    let url = "https://reports.example.invalid/head/index.html";
+    let mut opts = options(&repo, &actual, &storage, &config);
+    opts.report = Some(&report_dir);
+    opts.report_url = Some(url);
+    opts.markdown = Some(&markdown);
+    let run = ci(&opts).expect("the run finishes");
+
+    assert_eq!(run.report_url, Some(url.to_owned()));
+    let body = std::fs::read_to_string(&markdown).expect("the file is readable");
+    assert!(body.contains(url), "{body}");
+}
+
+/// The comment carries the same body as the markdown file, so a reader sees
+/// one account of the run wherever they look.
+#[test]
+fn the_comment_carries_the_notification_body() {
+    let dir = tempfile::tempdir().expect("a temporary directory");
+    let repo = dir.path().join("repo");
+    init(&repo);
+    let actual = dir.path().join("actual");
+    write_png(&actual.join("a.png"), 8, 8, [0, 128, 0, 255]);
+    let storage = storage(dir.path());
+    let config = default_config();
+
+    commit(&repo, "first");
+    ci(&options(&repo, &actual, &storage, &config)).expect("the first run finishes");
+
+    write_png(&actual.join("a.png"), 8, 8, [255, 0, 0, 255]);
+    commit(&repo, "second");
+    let stub = stub::Stub::start(vec![
+        stub::Reply::ok(b"[]"),
+        stub::Reply::ok(br#"{"id":1,"html_url":"https://example.invalid/1"}"#),
+    ]);
+    let github = GithubConfig {
+        api_url: stub.url(),
+        repository: "acme/site".into(),
+        pull_request: 3,
+        token: "ghs_token".into(),
+    };
+    let mut opts = options(&repo, &actual, &storage, &config);
+    opts.github = Some(&github);
+    let run = ci(&opts).expect("the run finishes");
+
+    assert_eq!(
+        run.comment,
+        Some(Notification::Posted {
+            url: "https://example.invalid/1".to_owned(),
+            updated: false,
+        })
+    );
+    let posted = stub.requests().remove(1);
+    let body = String::from_utf8_lossy(&posted.body).into_owned();
+    assert!(body.contains("<!-- pixeldelta -->"), "{body}");
+    assert!(body.contains("changed"), "{body}");
+}
+
+/// A `Config` equivalent to the flags' defaults, as if no config file were
+/// given: a fresh directory holds no `pixeldelta.config.json`.
+fn default_config() -> Config {
+    let dir = tempfile::tempdir().expect("a temporary directory");
+    load_config(None, dir.path(), Some(0.1), Some(0.0), Vec::new())
+        .expect("a directory with no config file loads with just the flag values")
+}
+
+fn options<'a>(
+    repo: &'a Path,
+    actual: &'a Path,
+    storage: &'a Storage,
+    config: &'a Config,
+) -> CiOptions<'a> {
+    CiOptions {
+        repo,
+        actual,
+        storage,
+        base_branch: "main",
+        history_limit: 50,
+        config,
+        antialiasing: true,
+        max_clusters: pixeldelta_cli::DEFAULT_MAX_CLUSTERS,
+        report: None,
+        report_url: None,
+        json: None,
+        junit: None,
+        markdown: None,
+        github: None,
+    }
+}
+
+fn storage_root(root: &Path) -> std::path::PathBuf {
+    root.join("store")
+}
+
+fn storage(root: &Path) -> Storage {
+    Storage::parse(storage_root(root).to_str().expect("a UTF-8 path")).expect("a directory spec")
+}
+
+fn write_png(path: &Path, width: u32, height: u32, color: [u8; 4]) {
+    std::fs::create_dir_all(path.parent().expect("the path has a parent"))
+        .expect("the directory is created");
+    let pixels: Vec<u8> = color
+        .iter()
+        .copied()
+        .cycle()
+        .take((width * height * 4) as usize)
+        .collect();
+    let png = pixeldelta_io::encode_png(width, height, &pixels).expect("the image encodes");
+    std::fs::write(path, png).expect("the file is written");
+}
+
+fn init(repo: &Path) {
+    std::fs::create_dir_all(repo).expect("the repository directory is created");
+    git(repo, &["-c", "init.defaultBranch=main", "init", "-q"]);
+    git(repo, &["config", "user.name", "pixeldelta test"]);
+    git(repo, &["config", "user.email", "test@example.invalid"]);
+}
+
+fn commit(repo: &Path, message: &str) -> String {
+    git(repo, &["commit", "-q", "--allow-empty", "-m", message]);
+    git(repo, &["rev-parse", "HEAD"])
+}
+
+fn git(repo: &Path, args: &[&str]) -> String {
+    let output = Command::new("git")
+        .current_dir(repo)
+        .args(args)
+        .output()
+        .expect("git runs");
+    assert!(
+        output.status.success(),
+        "git {args:?} failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8_lossy(&output.stdout).trim().to_owned()
+}

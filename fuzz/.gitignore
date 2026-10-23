@@ -1,0 +1,6 @@
+# seeds/ is committed. What a run produces is not: corpus/ is where libFuzzer
+# writes the inputs it finds, and it reaches thousands within minutes.
+/target
+/corpus
+/artifacts
+/coverage

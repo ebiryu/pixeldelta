@@ -1,0 +1,10 @@
+{
+  "name": "pixeldelta-workspace",
+  "version": "0.2.8",
+  "private": true,
+  "description": "Workspace root for the pixeldelta npm packages",
+  "packageManager": "pnpm@12.15.0",
+  "engines": {
+    "node": ">= 16"
+  }
+}

@@ -1,0 +1,24 @@
+[workspace]
+members = [
+    "crates/pixeldelta-core",
+    "crates/pixeldelta-io",
+    "crates/pixeldelta-report",
+    "crates/pixeldelta-cli",
+    "crates/pixeldelta-node",
+]
+resolver = "2"
+
+[workspace.package]
+# The npm package is what gets released; the release pull request writes this to
+# match `packages/pixeldelta/package.json`, which `pixeldelta --version` then
+# reports. The marker at the end of the line is what release-please rewrites.
+version = "0.2.8" # x-release-please-version
+edition = "2021"
+rust-version = "1.88"
+license = "MIT"
+repository = "https://github.com/ebiryu/pixeldelta"
+# The crates are distributed through npm, not crates.io.
+publish = false
+
+[profile.bench]
+debug = true

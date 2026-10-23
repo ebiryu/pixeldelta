@@ -1,0 +1,59 @@
+{
+  "name": "pixeldelta",
+  "version": "0.2.8",
+  "description": "Fast image comparison engine with difference clustering",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ebiryu/pixeldelta.git",
+    "directory": "packages/pixeldelta"
+  },
+  "main": "main.js",
+  "types": "index.d.ts",
+  "browser": "browser-entry.js",
+  "bin": {
+    "pixeldelta": "cli.js"
+  },
+  "files": [
+    "main.js",
+    "load.js",
+    "index.d.ts",
+    "browser-entry.js",
+    "cli.js"
+  ],
+  "napi": {
+    "binaryName": "pixeldelta",
+    "packageName": "pixeldelta",
+    "targets": [
+      "aarch64-apple-darwin",
+      "x86_64-apple-darwin",
+      "x86_64-unknown-linux-gnu",
+      "x86_64-unknown-linux-musl",
+      "aarch64-unknown-linux-gnu",
+      "x86_64-pc-windows-msvc",
+      "wasm32-wasip1-threads"
+    ]
+  },
+  "engines": {
+    "node": ">= 16"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "napi build --platform --release --manifest-path ../../crates/pixeldelta-node/Cargo.toml --output-dir .",
+    "build:debug": "napi build --platform --manifest-path ../../crates/pixeldelta-node/Cargo.toml --output-dir .",
+    "build:cli": "cargo build --release --manifest-path ../../crates/pixeldelta-cli/Cargo.toml && node scripts/place-cli.mjs",
+    "artifacts": "napi artifacts",
+    "test": "node --test \"test/*.test.mjs\"",
+    "test:wasi": "node scripts/test-wasi.mjs",
+    "version": "napi version"
+  },
+  "devDependencies": {
+    "@emnapi/core": "2.0.0-beta.2",
+    "@emnapi/runtime": "2.0.0-beta.2",
+    "@napi-rs/cli": "^3",
+    "@napi-rs/wasm-runtime": "^1.1.6",
+    "emnapi": "2.0.0-beta.2"
+  }
+}
