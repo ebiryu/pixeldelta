@@ -24,12 +24,19 @@ jobs:
   release-please:
     name: Release pull request
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
     steps:
+      # An event raised with GITHUB_TOKEN starts no workflow run, so a tag
+      # pushed with it would not reach the publish job in ci.yml. Every write
+      # below goes through this token instead.
+      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        id: app-token
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
       - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         id: release
+        with:
+          token: ${{ steps.app-token.outputs.token }}
 
       # The steps below finish the pull request release-please just wrote. They
       # run on its branch, and amend its commit so the pull request stays at one
@@ -40,6 +47,8 @@ jobs:
           ref: ${{ fromJSON(steps.release.outputs.pr).headBranchName }}
           # A shallow fetch would leave out the parent the amend below needs.
           fetch-depth: 0
+          # The amend is pushed with it too, so the pull request gets a CI run.
+          token: ${{ steps.app-token.outputs.token }}
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         if: ${{ steps.release.outputs.prs_created == 'true' }}
         with:
