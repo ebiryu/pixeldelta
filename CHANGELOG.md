@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.9](https://github.com/ebiryu/pixeldelta/compare/v0.2.8...v0.2.9) (2026-11-08)
+
+
+### Bug Fixes
+
+* **deps:** update npm dependencies ([#26](https://github.com/ebiryu/pixeldelta/issues/26)) ([eddaf98](https://github.com/ebiryu/pixeldelta/commit/eddaf98ee63349acc09afa3cb3ca9ceb847d099c))
+
 ## [0.2.8](https://github.com/ebiryu/pixeldelta/compare/v0.2.7...v0.2.8) (2026-10-23)
 
 
